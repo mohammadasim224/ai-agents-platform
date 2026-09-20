@@ -12,6 +12,7 @@ from backend.api.knowledge import router as knowledge_router
 from backend.api.projects import router as projects_router
 from backend.api.tasks import router as tasks_router
 from backend.api.workflows import router as workflows_router
+from backend.api.uploads import router as uploads_router
 from backend.services.generation import generate_for_prompt
 from backend.config import FRONTEND_ORIGINS
 
@@ -31,12 +32,7 @@ app.include_router(tasks_router)
 app.include_router(knowledge_router)
 app.include_router(evaluations_router)
 app.include_router(workflows_router)
-
-
-@app.get("/agents")
-async def list_agents():
-    return [{"id": "manager", "name": "Manager"}, {"id": "marketing", "name": "Marketing"}]
-
+app.include_router(uploads_router)
 
 class GenerateRequest(BaseModel):
     prompt: str

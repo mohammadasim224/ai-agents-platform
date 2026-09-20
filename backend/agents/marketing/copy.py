@@ -12,14 +12,13 @@ Output concise, marketing-ready copy with headline, body, CTA, and 3 variations 
 """
     try:
         result = route_prompt("marketing", prompt, system_prompt=system_prompt)
-    except RuntimeError:
+    except RuntimeError as error:
+        request = prompt.split("\n\nRelevant knowledge:", 1)[0].strip()
         return (
-            "Headline: A clearer path to better energy decisions\n\n"
-            "Body: Arizona homeowners can explore their energy options with a "
-            "straightforward solar consultation. Learn what may fit your home, "
-            "ask questions, and review the next steps without pressure.\n\n"
-            "CTA: Request an educational consultation.\n\n"
-            "Note: This draft was prepared in offline mode while the campaign "
-            "generation provider is temporarily unavailable."
+            f"Offline draft for this request:\n\n{request}\n\n"
+            "Suggested direction: Turn that request into a clear, audience-specific "
+            "message using only verified project knowledge. Add one concrete benefit, "
+            "a low-pressure next step, and a concise call to action.\n\n"
+            f"Provider status: {error}. Add a valid OPENROUTER_API_KEY to .env for live model generation."
         )
     return result.get("content", "")

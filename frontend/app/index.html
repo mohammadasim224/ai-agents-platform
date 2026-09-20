@@ -3,102 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Business Team</title>
+    <title>Voltaik AI | Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet" />
     <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        background: linear-gradient(135deg, #0f172a, #111827);
-        color: #e2e8f0;
-      }
-      .shell { max-width: 1200px; margin: 0 auto; padding: 32px 20px 60px; }
-      .topbar {
-        display: flex; justify-content: space-between; align-items: center;
-        margin-bottom: 24px;
-      }
-      .grid {
-        display: grid; grid-template-columns: 280px 1fr; gap: 20px;
-      }
-      .sidebar, .card {
-        background: rgba(15, 23, 42, 0.85);
-        border: 1px solid #334155;
-        border-radius: 16px;
-        padding: 20px;
-      }
-      .nav { display: grid; gap: 10px; }
-      .nav-item { padding: 10px 12px; border-radius: 10px; background: #1e293b; }
-      .card h2 { margin-top: 0; }
-      textarea {
-        width: 100%; min-height: 140px; margin-top: 12px; padding: 14px;
-        border-radius: 10px; border: 1px solid #475569; background: #0f172a; color: white;
-      }
-      button {
-        margin-top: 12px; padding: 11px 18px; border-radius: 10px; border: none;
-        background: #22c55e; color: #052e16; font-weight: 700; cursor: pointer;
-      }
-      .output {
-        margin-top: 18px; padding: 14px; border-radius: 10px; background: #020817;
-        white-space: pre-wrap; min-height: 150px; border: 1px solid #334155;
-      }
-      .team { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
-      .agent { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 12px; }
+      :root { --void:#06040f; --plum:#170a30; --plum2:#241044; --violet:#8b3bff; --violet2:#ad6bff; --amber:#ffbe2e; --paper:#f8f7ff; --muted:#a99fbe; --line:rgba(236,220,255,.13); --panel:rgba(20,10,43,.76); }
+      * { box-sizing:border-box; } @keyframes rise-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } } @keyframes slide-in { from { opacity:0; transform:translateX(-12px); } to { opacity:1; transform:translateX(0); } } @keyframes glow-pulse { 0%,100% { box-shadow:0 0 0 rgba(139,59,255,0); } 50% { box-shadow:0 0 24px rgba(139,59,255,.18); } } @keyframes float-soft { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-3px); } } body { margin:0; min-width:320px; color:var(--paper); background:var(--void); font:14px/1.55 Alexandria,sans-serif; -webkit-font-smoothing:antialiased; }
+      button, textarea, input { font:inherit; } button { border:0; cursor:pointer; } svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+      .app { min-height:100vh; display:grid; grid-template-columns:248px minmax(0,1fr); background:radial-gradient(circle at 66% 9%,rgba(139,59,255,.15),transparent 31%),radial-gradient(circle at 92% 72%,rgba(255,190,46,.07),transparent 25%); }
+      .sidebar { display:flex; flex-direction:column; padding:24px 14px 16px; border-right:1px solid var(--line); background:rgba(7,4,18,.74); animation:slide-in .65s cubic-bezier(.23,1,.32,1) both; }
+      .brand { display:flex; align-items:center; gap:10px; padding:0 12px 30px; color:var(--paper); font:700 18px 'Bricolage Grotesque',sans-serif; letter-spacing:-.05em; } .brand-mark { display:grid; place-items:center; width:29px; height:29px; border-radius:9px; color:var(--void); background:linear-gradient(135deg,var(--violet2),var(--amber)); box-shadow:0 0 24px rgba(139,59,255,.4); font-weight:800; } .brand em { font-style:normal; background:linear-gradient(120deg,var(--violet2),var(--amber)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+      .workspace-label,.eyebrow { color:var(--muted); text-transform:uppercase; letter-spacing:.13em; font-size:10px; font-weight:700; } .workspace { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; margin-bottom:22px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.035); } .workspace strong { display:block; font-size:12px; margin-top:2px; } .workspace small { color:#7f7694; font-size:10px; }
+      .nav { display:grid; gap:5px; } .nav a { display:flex; align-items:center; gap:11px; padding:10px 12px; color:var(--muted); border-radius:9px; text-decoration:none; transition:color .2s,background .2s,transform .2s; animation:slide-in .5s cubic-bezier(.23,1,.32,1) both; } .nav a:nth-child(1) { animation-delay:.16s; } .nav a:nth-child(2) { animation-delay:.22s; } .nav a:nth-child(3) { animation-delay:.28s; } .nav a:nth-child(4) { animation-delay:.34s; } .nav a:hover { transform:translateX(3px); } .nav a:hover,.nav a.active { color:var(--paper); background:linear-gradient(90deg,rgba(139,59,255,.22),rgba(139,59,255,.06)); } .nav a.active svg { color:var(--violet2); } .nav-section { margin:25px 12px 7px; } .sidebar-bottom { margin-top:auto; border-top:1px solid var(--line); padding:16px 8px 0; } .profile { display:flex; gap:10px; align-items:center; } .avatar { display:grid; place-items:center; width:31px; height:31px; border-radius:50%; color:var(--void); background:var(--amber); font-weight:700; font-size:11px; } .profile strong { display:block; font-size:11px; } .profile small { color:var(--muted); font-size:10px; }
+      .main { min-width:0; padding:0 38px 44px; } .topbar { height:76px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); } .crumbs { color:var(--muted); font-size:12px; } .crumbs b { color:var(--paper); font-weight:500; } .crumbs span { margin:0 7px; color:#554b68; } .top-actions { display:flex; gap:10px; } .icon-button { display:grid; place-items:center; width:34px; height:34px; color:var(--muted); border:1px solid var(--line); border-radius:9px; background:rgba(255,255,255,.025); } .icon-button:hover { color:var(--paper); border-color:rgba(173,107,255,.5); }
+      .content { width:min(100%,1060px); margin:0 auto; padding-top:44px; } .hero { display:flex; justify-content:space-between; align-items:flex-end; gap:28px; margin-bottom:26px; animation:rise-in .7s .12s cubic-bezier(.23,1,.32,1) both; } h1,h2,h3,p { margin:0; } h1 { margin-top:7px; font:700 clamp(30px,4vw,48px)/1.02 'Bricolage Grotesque',sans-serif; letter-spacing:-.055em; } .hero p { max-width:430px; margin-top:12px; color:var(--muted); font-size:13px; } .status { display:flex; align-items:center; gap:8px; color:#cfc6df; white-space:nowrap; font-size:11px; animation:rise-in .7s .3s cubic-bezier(.23,1,.32,1) both; } .dot { width:7px; height:7px; border-radius:50%; background:#60e19b; box-shadow:0 0 12px #60e19b; animation:glow-pulse 2.8s 1s ease-in-out infinite; }
+      .layout { display:grid; grid-template-columns:minmax(0,1fr) 270px; gap:18px; align-items:start; animation:rise-in .75s .24s cubic-bezier(.23,1,.32,1) both; } .panel { border:1px solid var(--line); border-radius:14px; background:var(--panel); box-shadow:0 16px 60px rgba(0,0,0,.16); transition:border-color .25s,box-shadow .25s,transform .25s; } .panel:hover { border-color:rgba(173,107,255,.24); box-shadow:0 20px 70px rgba(0,0,0,.22); } .composer { padding:20px; } .composer-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; } h2 { font:700 17px 'Bricolage Grotesque',sans-serif; letter-spacing:-.03em; } .agent-chip { display:flex; align-items:center; gap:7px; color:#dacdf0; padding:7px 10px; border:1px solid rgba(173,107,255,.25); border-radius:7px; background:rgba(139,59,255,.1); font-size:11px; animation:float-soft 4s 1.2s ease-in-out infinite; } .agent-chip i { width:6px; height:6px; border-radius:50%; background:var(--violet2); }
+      textarea { display:block; width:100%; min-height:148px; resize:vertical; padding:16px; color:var(--paper); border:1px solid rgba(236,220,255,.16); border-radius:10px; outline:0; background:rgba(5,3,13,.72); line-height:1.6; } textarea:focus { border-color:rgba(173,107,255,.65); box-shadow:0 0 0 3px rgba(139,59,255,.09); } .composer-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:13px; } .tool-row { display:flex; gap:7px; } .tool { display:inline-flex; align-items:center; gap:6px; padding:7px 9px; color:var(--muted); border:1px solid var(--line); border-radius:7px; background:transparent; font-size:11px; } .tool:hover { color:var(--paper); border-color:rgba(173,107,255,.5); } .generate { display:inline-flex; align-items:center; gap:8px; padding:10px 15px; color:#180b2f; border-radius:8px; background:linear-gradient(120deg,var(--violet2),var(--amber)); font-weight:700; box-shadow:0 8px 22px rgba(139,59,255,.2); } .generate:hover { transform:translateY(-1px); }
+      .result { margin-top:18px; padding:18px; min-height:190px; border:1px solid var(--line); border-radius:10px; background:rgba(5,3,13,.55); } .result.empty { display:grid; place-items:center; color:#716781; text-align:center; } .result.empty svg { width:28px; height:28px; margin-bottom:8px; color:#8b3bff; } .result-content { white-space:pre-wrap; color:#e6def3; } .result-meta { display:flex; gap:16px; margin-bottom:12px; color:var(--muted); font-size:10px; } .result-meta span:first-child { color:#ffd772; }
+      .side-stack { display:grid; gap:18px; } .side-panel { padding:17px; } .side-panel:nth-child(1) { animation:rise-in .6s .38s both; } .side-panel:nth-child(2) { animation:rise-in .6s .48s both; } .panel-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; } .panel-title h3 { font:700 13px 'Bricolage Grotesque',sans-serif; } .text-link { color:var(--violet2); background:none; font-size:10px; } .history { display:grid; gap:10px; } .history-item { padding:9px 10px; border-left:2px solid transparent; cursor:pointer; transition:background .2s,transform .2s; animation:rise-in .45s .55s both; } .history-item:hover { transform:translateX(3px); } .history-item:hover,.history-item.current { border-left-color:var(--amber); background:rgba(255,255,255,.035); } .history-item strong { display:block; overflow:hidden; color:#dfd4ef; font-size:11px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; } .history-item small { color:#766b88; font-size:10px; } .file-list { display:grid; gap:9px; } .file { display:flex; align-items:center; gap:9px; min-width:0; animation:rise-in .45s .6s both; } .file-icon { display:grid; place-items:center; flex:none; width:28px; height:28px; color:var(--violet2); border-radius:7px; background:rgba(139,59,255,.14); } .file-info { min-width:0; } .file-info strong { display:block; overflow:hidden; color:#ddd3eb; font-size:10px; text-overflow:ellipsis; white-space:nowrap; } .file-info small { color:#716781; font-size:9px; } .empty-files { color:#766b88; font-size:11px; }
+      .team { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px; } .team-card { display:flex; align-items:center; gap:10px; padding:12px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.025); transition:transform .25s,border-color .25s,background .25s; animation:rise-in .55s .52s both; } .team-card:nth-child(2) { animation-delay:.6s; } .team-card:nth-child(3) { animation-delay:.68s; } .team-card:hover { transform:translateY(-3px); border-color:rgba(173,107,255,.35); background:rgba(139,59,255,.07); } .team-card .avatar { width:28px; height:28px; color:var(--paper); background:var(--plum2); } .team-card strong { display:block; font-size:10px; } .team-card small { color:var(--muted); font-size:9px; }
+      .toast { position:fixed; right:24px; bottom:24px; max-width:320px; padding:12px 15px; color:var(--paper); border:1px solid rgba(173,107,255,.35); border-radius:9px; background:#1c0d38; box-shadow:0 15px 40px rgba(0,0,0,.35); transform:translateY(20px); opacity:0; pointer-events:none; transition:.25s; font-size:11px; } .toast.show { opacity:1; transform:translateY(0); } #fileInput { display:none; }
+      @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.01ms !important; } } @media (max-width:900px) { .app { grid-template-columns:70px minmax(0,1fr); } .sidebar { padding:20px 10px; } .brand { padding:0 10px 28px; } .brand > span:not(.brand-mark),.workspace-label,.workspace strong,.workspace small,.nav a span,.nav-section,.sidebar-bottom { display:none; } .workspace { justify-content:center; padding:10px 0; } .nav a { justify-content:center; } .main { padding-inline:22px; } } @media (max-width:680px) { .main { padding-inline:14px; } .topbar { height:62px; } .content { padding-top:30px; } .hero { display:block; } .status { margin-top:18px; } .layout { grid-template-columns:1fr; } .team { grid-template-columns:1fr; } .side-stack { grid-template-columns:1fr 1fr; } } @media (max-width:470px) { .side-stack { grid-template-columns:1fr; } .composer-tools { align-items:flex-start; flex-direction:column; } .generate { width:100%; justify-content:center; } }
     </style>
   </head>
   <body>
-    <div class="shell">
-      <div class="topbar">
-        <h1>AI Business Team</h1>
-        <div>Demo Workspace</div>
-      </div>
-      <div class="grid">
-        <aside class="sidebar">
-          <h3>Departments</h3>
-          <div class="nav">
-            <div class="nav-item">Marketing</div>
-            <div class="nav-item">Sales</div>
-            <div class="nav-item">Automation</div>
-            <div class="nav-item">Reviews</div>
-          </div>
-        </aside>
-        <main>
-          <div class="card">
-            <h2>Generate</h2>
-            <textarea id="prompt">Write an educational ad for Arizona homeowners about a free solar consultation.</textarea>
-            <button onclick="generate()">Generate</button>
-            <div id="result" class="output">Waiting for a prompt...</div>
-          </div>
-          <div class="card">
-            <h2>Team</h2>
-            <div class="team">
-              <div class="agent">Manager</div>
-              <div class="agent">Copywriter</div>
-              <div class="agent">Setter</div>
-            </div>
-          </div>
-        </main>
-      </div>
-    </div>
+    <div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">v</span><span>voltaik <em>AI</em></span></div><div class="workspace-label">Workspace</div><div class="workspace"><div><strong>Solar growth team</strong><small>Demo workspace</small></div><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></div><nav class="nav"><a class="active" href="#studio"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h10"/></svg><span>Studio</span></a><a href="#history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/><path d="M12 7v5l3 2"/></svg><span>History</span></a><a href="#files"><svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11H5z"/><path d="M14 4v5h5"/></svg><span>Knowledge files</span></a><a href="#team"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c.5-4 2.5-6 6-6s5.5 2 6 6M15 15c3 0 5 1.5 6 5"/></svg><span>AI team</span></a></nav><div class="nav-section workspace-label">Manage</div><nav class="nav"><a href="#settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg><span>Settings</span></a></nav><div class="sidebar-bottom"><div class="profile"><div class="avatar">MB</div><div><strong>Mohamed</strong><small>Owner</small></div></div></div></aside>
+      <main class="main"><header class="topbar"><div class="crumbs">Workspace <span>/</span> <b>Studio</b></div><div class="top-actions"><button class="icon-button" title="Notifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button><button class="icon-button" title="Help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1.5 1-1.5 2-1.5 3M12 17h.01"/></svg></button></div></header><div class="content" id="studio"><section class="hero"><div><div class="eyebrow">AI operations studio</div><h1>Make the next move.</h1><p>Bring your business context, your team, and your best ideas into one intelligent workspace.</p></div><div class="status"><span class="dot"></span> All systems operational</div></section><div class="layout"><section><div class="panel composer"><div class="composer-head"><h2>Start a conversation</h2><div class="agent-chip"><i></i> Manager · ready</div></div><textarea id="prompt" placeholder="Ask your AI team to create, analyze, or plan...">Write an educational ad for Arizona homeowners about a free solar consultation.</textarea><div class="composer-tools"><div class="tool-row"><button class="tool" id="attachButton"><svg viewBox="0 0 24 24"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.8-8.8"/></svg> Attach files</button><button class="tool" id="clearButton"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg> Clear</button></div><button class="generate" id="generateButton">Generate with team <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div><div class="result empty" id="result"><div><svg viewBox="0 0 24 24"><path d="M12 3 14.5 9.5 21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg><div>Your team's response will appear here.</div></div></div><input id="fileInput" type="file" multiple accept=".txt,.md,.csv,.json,.html,.pdf,.doc,.docx"/><div class="team" id="team"><div class="team-card"><div class="avatar">M</div><div><strong>Manager</strong><small>Orchestrator</small></div></div><div class="team-card"><div class="avatar">C</div><div><strong>Copywriter</strong><small>Marketing</small></div></div><div class="team-card"><div class="avatar">S</div><div><strong>Setter</strong><small>Sales</small></div></div></div></section><aside class="side-stack"><div class="panel side-panel" id="history"><div class="panel-title"><h3>Recent conversations</h3><button class="text-link" id="clearHistory">Clear all</button></div><div class="history" id="historyList"><div class="history-item current"><strong>Arizona solar education ad</strong><small>Just now</small></div></div></div><div class="panel side-panel" id="files"><div class="panel-title"><h3>Knowledge files</h3><button class="text-link" id="addFileLink">+ Add</button></div><div class="file-list" id="fileList"><div class="empty-files">Your uploaded context will live here.</div></div></div></aside></div></div></main></div><div class="toast" id="toast"></div>
     <script>
-      const apiBase = `http://${window.location.hostname || '127.0.0.1'}:8000`;
-
-      async function generate() {
-        const prompt = document.getElementById('prompt').value;
-        const resultEl = document.getElementById('result');
-        resultEl.textContent = 'Generating...';
-        try {
-          const res = await fetch(`${apiBase}/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, project_id: 'demo-project' })
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.detail || 'Request failed');
-          resultEl.textContent = JSON.stringify(data, null, 2);
-        } catch (error) {
-          resultEl.textContent = `Unable to reach the AI team: ${error.message}`;
-        }
-      }
+      const apiBase = `http://${window.location.hostname || '127.0.0.1'}:8000`; const promptEl = document.getElementById('prompt'); const resultEl = document.getElementById('result'); const fileInput = document.getElementById('fileInput'); const historyKey = 'voltaik-chat-history'; const files = []; const icon = '<svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11H5z"/><path d="M14 4v5h5"/></svg>';
+      function toast(message) { const el = document.getElementById('toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2800); }
+      function renderHistory() { const list = document.getElementById('historyList'); const history = JSON.parse(localStorage.getItem(historyKey) || '[]'); list.innerHTML = history.length ? history.map((item, index) => `<div class="history-item ${index === 0 ? 'current' : ''}" data-prompt="${encodeURIComponent(item.prompt)}"><strong>${item.prompt.replace(/[<>]/g, '')}</strong><small>${item.time}</small></div>`).join('') : '<div class="empty-files">No conversations yet.</div>'; list.querySelectorAll('.history-item').forEach(item => item.addEventListener('click', () => { promptEl.value = decodeURIComponent(item.dataset.prompt); })); }
+      function saveHistory(prompt) { const history = JSON.parse(localStorage.getItem(historyKey) || '[]').filter(item => item.prompt !== prompt); history.unshift({ prompt, time: 'Just now' }); localStorage.setItem(historyKey, JSON.stringify(history.slice(0, 8))); renderHistory(); }
+      function renderFiles() { const list = document.getElementById('fileList'); list.innerHTML = files.length ? files.map(file => `<div class="file"><div class="file-icon">${icon}</div><div class="file-info"><strong>${file.name.replace(/[<>]/g, '')}</strong><small>${file.size}</small></div></div>`).join('') : '<div class="empty-files">Your uploaded context will live here.</div>'; }
+      async function uploadFiles(selected) { for (const file of selected) { files.unshift({ name:file.name, size:`${(file.size / 1024).toFixed(1)} KB · uploading` }); renderFiles(); const body = new FormData(); body.append('file', file); try { const response = await fetch(`${apiBase}/knowledge/upload`, { method:'POST', body }); if (!response.ok) throw new Error('Upload failed'); const data = await response.json(); files[0] = { name:data.filename, size:`${(data.size / 1024).toFixed(1)} KB · ready` }; toast(`${file.name} added to workspace`); } catch (error) { files.shift(); toast(`Could not upload ${file.name}`); } renderFiles(); } }
+      async function generate() { const prompt = promptEl.value.trim(); if (!prompt) return toast('Add a prompt first.'); const button = document.getElementById('generateButton'); button.disabled = true; button.innerHTML = 'Working with your team...'; resultEl.className = 'result'; resultEl.innerHTML = '<div class="result-content">Thinking through the best next move...</div>'; try { const response = await fetch(`${apiBase}/generate`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt, project_id:'demo-project' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Request failed'); resultEl.innerHTML = `<div class="result-meta"><span>${data.decision?.agent || 'AI team'}</span><span>${data.knowledge_used || 0} knowledge sources used</span></div><div class="result-content">${String(data.output || '').replace(/[<>]/g, '')}</div>`; saveHistory(prompt); } catch (error) { resultEl.innerHTML = `<div class="result-content">Unable to reach the AI team: ${error.message}</div>`; } finally { button.disabled = false; button.innerHTML = 'Generate with team <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`; } }
+      document.getElementById('generateButton').addEventListener('click', generate); document.getElementById('attachButton').addEventListener('click', () => fileInput.click()); document.getElementById('addFileLink').addEventListener('click', () => fileInput.click()); fileInput.addEventListener('change', event => uploadFiles(event.target.files)); document.getElementById('clearButton').addEventListener('click', () => { promptEl.value = ''; resultEl.className = 'result empty'; resultEl.innerHTML = '<div><svg viewBox="0 0 24 24"><path d="M12 3 14.5 9.5 21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg><div>Your team\'s response will appear here.</div></div>'; }); document.getElementById('clearHistory').addEventListener('click', () => { localStorage.removeItem(historyKey); renderHistory(); toast('Conversation history cleared'); }); renderHistory();
     </script>
+    <script src="app.js"></script>
   </body>
 </html>
