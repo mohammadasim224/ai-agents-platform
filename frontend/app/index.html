@@ -80,17 +80,24 @@
       </div>
     </div>
     <script>
+      const apiBase = `http://${window.location.hostname || '127.0.0.1'}:8000`;
+
       async function generate() {
         const prompt = document.getElementById('prompt').value;
         const resultEl = document.getElementById('result');
         resultEl.textContent = 'Generating...';
-        const res = await fetch('http://127.0.0.1:8000/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, project_id: 'demo-project' })
-        });
-        const data = await res.json();
-        resultEl.textContent = JSON.stringify(data, null, 2);
+        try {
+          const res = await fetch(`${apiBase}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, project_id: 'demo-project' })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Request failed');
+          resultEl.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+          resultEl.textContent = `Unable to reach the AI team: ${error.message}`;
+        }
       }
     </script>
   </body>

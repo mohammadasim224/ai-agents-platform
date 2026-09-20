@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.api.agents import router as agents_router
@@ -12,8 +13,16 @@ from backend.api.projects import router as projects_router
 from backend.api.tasks import router as tasks_router
 from backend.api.workflows import router as workflows_router
 from backend.services.generation import generate_for_prompt
+from backend.config import FRONTEND_ORIGINS
 
 app = FastAPI(title="AI Business Team")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=FRONTEND_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(projects_router)

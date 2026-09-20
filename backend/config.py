@@ -25,3 +25,11 @@ SALES_MODEL = get_env("SALES_MODEL", DEFAULT_MODEL)
 AUTOMATION_MODEL = get_env("AUTOMATION_MODEL", DEFAULT_MODEL)
 EVALUATION_MODEL = get_env("EVALUATION_MODEL", DEFAULT_MODEL)
 PROJECT_NAME = get_env("PROJECT_NAME", "AI Business Team")
+FRONTEND_ORIGINS = [
+    origin.strip()
+    for origin in get_env(
+        "FRONTEND_ORIGINS",
+        "http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:8000,http://localhost:8000",
+    ).split(",")
+    if origin.strip()
+]

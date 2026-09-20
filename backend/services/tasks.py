@@ -8,6 +8,9 @@ from backend.services.generation import generate_for_prompt
 def enqueue_task(project_id: str, prompt: str, agent: str | None = None) -> dict:
     decision = decide_agent(prompt)
     selected_agent = agent or decision.get("agent", "ad_copywriting")
+    marketing_terms = ("ad", "advert", "campaign", "copy", "headline", "creative")
+    if not agent and any(term in prompt.lower() for term in marketing_terms):
+        selected_agent = "ad_copywriting"
     task = create_task(project_id=project_id, agent=selected_agent, input_text=prompt)
     result = generate_for_prompt(prompt, project_id)
     generation = create_generation(
