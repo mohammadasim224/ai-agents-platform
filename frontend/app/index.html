@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Business Team</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #0f172a, #111827);
+        color: #e2e8f0;
+      }
+      .shell { max-width: 1200px; margin: 0 auto; padding: 32px 20px 60px; }
+      .topbar {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 24px;
+      }
+      .grid {
+        display: grid; grid-template-columns: 280px 1fr; gap: 20px;
+      }
+      .sidebar, .card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid #334155;
+        border-radius: 16px;
+        padding: 20px;
+      }
+      .nav { display: grid; gap: 10px; }
+      .nav-item { padding: 10px 12px; border-radius: 10px; background: #1e293b; }
+      .card h2 { margin-top: 0; }
+      textarea {
+        width: 100%; min-height: 140px; margin-top: 12px; padding: 14px;
+        border-radius: 10px; border: 1px solid #475569; background: #0f172a; color: white;
+      }
+      button {
+        margin-top: 12px; padding: 11px 18px; border-radius: 10px; border: none;
+        background: #22c55e; color: #052e16; font-weight: 700; cursor: pointer;
+      }
+      .output {
+        margin-top: 18px; padding: 14px; border-radius: 10px; background: #020817;
+        white-space: pre-wrap; min-height: 150px; border: 1px solid #334155;
+      }
+      .team { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+      .agent { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <h1>AI Business Team</h1>
+        <div>Demo Workspace</div>
+      </div>
+      <div class="grid">
+        <aside class="sidebar">
+          <h3>Departments</h3>
+          <div class="nav">
+            <div class="nav-item">Marketing</div>
+            <div class="nav-item">Sales</div>
+            <div class="nav-item">Automation</div>
+            <div class="nav-item">Reviews</div>
+          </div>
+        </aside>
+        <main>
+          <div class="card">
+            <h2>Generate</h2>
+            <textarea id="prompt">Write an educational ad for Arizona homeowners about a free solar consultation.</textarea>
+            <button onclick="generate()">Generate</button>
+            <div id="result" class="output">Waiting for a prompt...</div>
+          </div>
+          <div class="card">
+            <h2>Team</h2>
+            <div class="team">
+              <div class="agent">Manager</div>
+              <div class="agent">Copywriter</div>
+              <div class="agent">Setter</div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script>
+      async function generate() {
+        const prompt = document.getElementById('prompt').value;
+        const resultEl = document.getElementById('result');
+        resultEl.textContent = 'Generating...';
+        const res = await fetch('http://127.0.0.1:8000/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, project_id: 'demo-project' })
+        });
+        const data = await res.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      }
+    </script>
+  </body>
+</html>
