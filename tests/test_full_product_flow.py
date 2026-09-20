@@ -30,9 +30,20 @@ def test_register_login_and_project_access():
 def test_team_workflow_route_returns_structured_output():
     response = client.post(
         "/workflows/team-campaign",
-        json={"prompt": "Create a campaign for Arizona homeowners about solar consultations."},
+        json={"prompt": "Create a campaign for Arizona homeowners about solar evaluations."},
     )
     assert response.status_code == 200
     body = response.json()
-    assert "results" in body
-    assert isinstance(body["results"], list)
+    assert body["workflow"] == "team-campaign"
+    assert body["status"] in {"ok", "error"}
+    assert "trace" in body
+    if body["status"] == "error":
+        assert body["error"]["message"]
+
+
+def test_team_workflow_rejects_empty_prompt():
+    response = client.post("/workflows/team-campaign", json={"prompt": ""})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["error"]["code"] == "empty_prompt"

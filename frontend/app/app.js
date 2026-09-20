@@ -47,7 +47,24 @@
     .mini-action.danger { color:#ff9d9d; }
     .mini-action:hover { border-color:rgba(173,107,255,.5); }
     .empty-state { padding:28px 8px; color:#766b88; text-align:center; font-size:12px; }
+    .result-error { padding:14px; border:1px solid rgba(255,120,120,.35); border-radius:9px; background:rgba(120,30,50,.18); }
+    .result-error strong { display:block; margin-bottom:6px; color:#ffb4b4; font-size:13px; }
+    .result-error p { margin:0; color:#e6d5dc; font-size:12px; }
+    .result-error .result-hint { margin-top:8px; color:var(--muted); font-size:11px; }
+    .result-trace { margin-top:12px; border:1px solid var(--line); border-radius:9px; background:rgba(5,3,13,.5); }
+    .result-trace summary { padding:11px 13px; color:#cdbfe4; cursor:pointer; font-size:11px; }
+    .result-trace ul { margin:0; padding:0 13px 13px; list-style:none; }
+    .trace-row { display:grid; grid-template-columns:96px 120px 1fr; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:10px; }
+    .trace-stage { color:var(--violet2); text-transform:uppercase; letter-spacing:.08em; font-weight:700; }
+    .trace-agent { color:#d8cbe9; }
+    .trace-summary { color:var(--muted); }
+    .trace-error .trace-stage, .trace-error .trace-summary { color:#ff9d9d; }
+    .artifact-link { display:inline-flex; align-items:center; gap:8px; margin-top:12px; padding:10px 13px; color:#180b2f; border-radius:8px; background:linear-gradient(120deg,var(--amber),#ffd980); font-size:11px; font-weight:700; text-decoration:none; }
+    .artifact-link:hover { transform:translateY(-1px); }
+    .artifact-link svg { width:15px; height:15px; }
     .agent-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .team-group { margin-bottom:26px; }
+    .team-group h2 { margin-bottom:12px; color:#cdbfe4; font:700 13px 'Bricolage Grotesque',sans-serif; }
     .agent-card { padding:16px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.025); animation:item-enter .5s both; transition:transform .25s,border-color .25s,background .25s; }
     .agent-card:nth-child(1) { animation-delay:.16s; } .agent-card:nth-child(2) { animation-delay:.24s; } .agent-card:nth-child(3) { animation-delay:.32s; } .agent-card:hover { transform:translateY(-4px); border-color:rgba(173,107,255,.4); background:rgba(139,59,255,.07); }
     .agent-card .agent-card-top { display:flex; align-items:center; gap:10px; margin-bottom:15px; }
@@ -132,11 +149,16 @@
   }
 
   async function renderTeam() {
-    content.innerHTML = `<div class="page-view"><div class="page-header"><div><div class="eyebrow">Your digital operators</div><h1>AI team</h1><p>Choose a specialist, see what they own, and bring them into the next task.</p></div></div><div class="agent-grid" id="agentGrid"><div class="empty-state">Loading your team...</div></div></div>`;
+    content.innerHTML = `<div class="page-view"><div class="page-header"><div><div class="eyebrow">Chain of command</div><h1>AI team</h1><p>The manager is the only agent that talks to you. It routes work to a department head, who assigns specialists and verifies their work before anything comes back.</p></div></div><div class="agent-grid" id="agentGrid"><div class="empty-state">Loading your team...</div></div></div>`;
     try {
       const response = await fetch(`${apiBase}/agents`); const agents = await response.json();
-      document.getElementById('agentGrid').innerHTML = agents.map(agent => `<article class="agent-card"><div class="agent-card-top"><div class="avatar">${escapeHtml(agent.name.slice(0,1))}</div><div><h3>${escapeHtml(agent.name)}</h3><small>${escapeHtml(agent.department)}</small></div></div><p>${escapeHtml({ manager:'Routes work to the right specialist and keeps context aligned.', marketing:'Turns positioning and business context into compelling campaign assets.', sales:'Builds conversations, qualifies intent, and moves prospects forward.' }[agent.id] || 'A focused operator for your business workflow.')}</p><button class="secondary-action" data-use-agent="${escapeHtml(agent.name)}">Use this agent</button></article>`).join('');
-      document.querySelectorAll('[data-use-agent]').forEach(button => button.addEventListener('click', () => { localStorage.setItem('voltaik-agent', button.dataset.useAgent); navigate('studio'); toast(`${button.dataset.useAgent} is ready in Studio`); }));
+      const groups = [
+        { key: 'manager', label: 'Top of the chain' },
+        { key: 'department_head', label: 'Department heads' },
+        { key: 'specialist', label: 'Specialists' },
+      ];
+      const render = group => agents.filter(agent => agent.role === group.key).map(agent => `<article class="agent-card"><div class="agent-card-top"><div class="avatar">${escapeHtml(agent.name.slice(0,1))}</div><div><h3>${escapeHtml(agent.name)}</h3><small>${escapeHtml(agent.role === 'manager' ? 'Only user-facing agent' : agent.role.replace('_',' '))}</small></div></div><p>${escapeHtml(agent.description || '')}</p>${agent.requires_backtest ? '<small class="eyebrow">Backtested before delivery</small>' : ''}</article>`).join('');
+      document.getElementById('agentGrid').innerHTML = groups.map(group => { const cards = render(group); return cards ? `<div class="team-group"><h2>${escapeHtml(group.label)}</h2><div class="agent-grid">${cards}</div></div>` : ''; }).join('') || '<div class="empty-state">No agents are registered.</div>';
     } catch (error) { document.getElementById('agentGrid').innerHTML = '<div class="empty-state">Could not reach the AI team service.</div>'; }
   }
 
@@ -156,11 +178,71 @@
     const fileInput = document.getElementById('fileInput');
     const prompt = document.getElementById('prompt');
     const result = document.getElementById('result');
-    const generate = async () => { if (!prompt.value.trim()) return toast('Add a prompt first.'); generateButton.disabled = true; generateButton.textContent = 'Working with your team...'; result.className = 'result'; result.innerHTML = '<div class="result-content">Thinking through the best next move...</div>'; try { const response = await fetch(`${apiBase}/generate`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ prompt:prompt.value.trim(), project_id:'demo-project' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Request failed'); result.innerHTML = `<div class="result-meta"><span>${escapeHtml(data.decision?.agent || 'AI team')}</span><span>${data.knowledge_used || 0} knowledge sources used</span></div><div class="result-content">${escapeHtml(data.output)}</div>`; const history = historyItems().filter(item => item.prompt !== prompt.value.trim()); history.unshift({ prompt:prompt.value.trim(), time:'Just now' }); localStorage.setItem(historyKey, JSON.stringify(history.slice(0,8))); } catch (error) { result.innerHTML = `<div class="result-content">Unable to reach the AI team: ${escapeHtml(error.message)}</div>`; } finally { generateButton.disabled = false; generateButton.textContent = 'Generate with team'; } };
+    const attachmentIds = [];
+
+    const renderError = error => {
+      const title = escapeHtml(error?.title || 'The request could not be completed.');
+      const message = escapeHtml(error?.message || 'No further detail was provided.');
+      const hint = escapeHtml(error?.hint || '');
+      return `<div class="result-error"><strong>${title}</strong><p>${message}</p>${hint ? `<p class="result-hint">${hint}</p>` : ''}</div>`;
+    };
+
+    const renderTrace = trace => {
+      if (!Array.isArray(trace) || !trace.length) return '';
+      const rows = trace.map(step => `<li class="trace-row trace-${escapeHtml(step.status)}"><span class="trace-stage">${escapeHtml(step.stage)}</span><span class="trace-agent">${escapeHtml(step.agent)}</span><span class="trace-summary">${escapeHtml(step.summary)}</span></li>`).join('');
+      return `<details class="result-trace"><summary>How the team worked through this (${trace.length} steps)</summary><ul>${rows}</ul></details>`;
+    };
+
+    const renderBacktests = backtests => {
+      if (!Array.isArray(backtests) || !backtests.length) return '';
+      const rows = backtests.map(item => {
+        const percent = Math.round((item.conversion_rate || 0) * 1000) / 10;
+        const target = Math.round((item.target_rate || 0) * 1000) / 10;
+        return `<li>${escapeHtml(item.passed ? 'Passed' : 'Failed')} · ${item.conversions}/${item.calls} calls converted (${percent}%) against a ${target}% target</li>`;
+      }).join('');
+      return `<details class="result-trace"><summary>Backtest results (${backtests.length})</summary><ul>${rows}</ul></details>`;
+    };
+
+    const renderArtifacts = artifacts => {
+      if (!Array.isArray(artifacts) || !artifacts.length) return '';
+      return artifacts.map(file => `<a class="artifact-link" href="${apiBase}${escapeHtml(file.download_url)}" download><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg> Download ${escapeHtml(file.filename)}</a>`).join('');
+    };
+
+    const generate = async () => {
+      if (!prompt.value.trim()) return toast('Add a prompt first.');
+      generateButton.disabled = true;
+      generateButton.textContent = 'Working with your team...';
+      result.className = 'result';
+      result.innerHTML = '<div class="result-content">The manager is reviewing your request...</div>';
+      try {
+        const response = await fetch(`${apiBase}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: prompt.value.trim(), project_id: 'demo-project', attachment_ids: attachmentIds }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Request failed');
+        const departments = Array.isArray(data.departments) ? data.departments.join(', ') : '';
+        const meta = `<div class="result-meta"><span>${escapeHtml(departments || 'manager')}</span><span>${data.knowledge_used || 0} knowledge sources used</span></div>`;
+        if (data.status === 'error') {
+          result.innerHTML = `${meta}${renderError(data.error)}${renderTrace(data.trace)}`;
+        } else {
+          result.innerHTML = `${meta}<div class="result-content">${escapeHtml(data.output)}</div>${renderArtifacts(data.artifacts)}${renderBacktests(data.backtests)}${renderTrace(data.trace)}`;
+        }
+        const history = historyItems().filter(item => item.prompt !== prompt.value.trim());
+        history.unshift({ prompt: prompt.value.trim(), time: 'Just now' });
+        localStorage.setItem(historyKey, JSON.stringify(history.slice(0, 8)));
+      } catch (error) {
+        result.innerHTML = renderError({ title: 'Unable to reach the AI team.', message: error.message, hint: 'Check that the backend is running and retry.' });
+      } finally {
+        generateButton.disabled = false;
+        generateButton.textContent = 'Generate with team';
+      }
+    };
     generateButton.addEventListener('click', generate);
     document.getElementById('clearButton')?.addEventListener('click', () => { prompt.value = ''; result.className = 'result empty'; result.innerHTML = '<div>Your team\'s response will appear here.</div>'; });
     document.getElementById('attachButton')?.addEventListener('click', () => fileInput.click());
-    fileInput?.addEventListener('change', async event => { for (const file of event.target.files) { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiBase}/knowledge/upload`, { method:'POST', body }); toast(response.ok ? `${file.name} added to workspace` : `Could not upload ${file.name}`); } });
+    fileInput?.addEventListener('change', async event => { for (const file of event.target.files) { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiBase}/knowledge/upload`, { method:'POST', body }); if (response.ok) { const data = await response.json(); attachmentIds.push(data.filename); toast(`${file.name} attached to your next request`); } else { toast(`Could not upload ${file.name}`); } } });
     document.getElementById('addFileLink')?.addEventListener('click', () => fileInput.click());
     document.getElementById('clearHistory')?.addEventListener('click', () => { localStorage.removeItem(historyKey); document.getElementById('historyList').innerHTML = '<div class="empty-files">No conversations yet.</div>'; toast('Conversation history cleared'); });
   }

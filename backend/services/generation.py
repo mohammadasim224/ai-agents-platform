@@ -1,32 +1,56 @@
+"""Generation service.
+
+Thin adapter between the API layer and the orchestrator. The orchestrator owns
+the chain of command; this module only handles persistence of the result.
+"""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import Any
 
-from backend.agents.manager import decide_agent
-from backend.agents.marketing.copy import write_ad_copy
-from backend.knowledge.ingestion import ingest_knowledge
-from backend.knowledge.retrieval import retrieve_knowledge
-from backend.services.compliance import check_compliance
+from backend.database.database import create_generation, create_task
+from backend.orchestrator import PipelineResult, run_pipeline
 
 
-def generate_for_prompt(prompt: str, project_id: str = "demo-project") -> dict:
-    decision = decide_agent(prompt)
+def generate_for_prompt(
+    prompt: str,
+    project_id: str = "demo-project",
+    *,
+    attachment_ids: list[str] | None = None,
+) -> PipelineResult:
+    """Run the full chain of command for a prompt.
 
-    knowledge_root = Path(__file__).resolve().parents[2] / "knowledge"
-    chunks = ingest_knowledge(knowledge_root)
+    Returns a `PipelineResult`. Failures are represented as a result with
+    `status == "error"` and an explanatory `error` payload, never as a fabricated
+    answer.
+    """
+    return run_pipeline(prompt, project_id=project_id, attachment_ids=attachment_ids)
 
-    business_context = retrieve_knowledge(prompt, chunks, category="business", limit=3)
-    marketing_context = retrieve_knowledge(prompt, chunks, category="marketing", limit=3)
-    all_context = business_context + marketing_context
 
-    context_text = "\n\n".join(chunk["content"] for chunk in all_context[:5])
-    output = write_ad_copy(f"{prompt}\n\nRelevant knowledge:\n{context_text}")
-    compliance = check_compliance(output)
+def generate_and_record(
+    prompt: str,
+    project_id: str = "demo-project",
+    *,
+    attachment_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run the pipeline and persist the task plus generation record."""
+    result = run_pipeline(prompt, project_id=project_id, attachment_ids=attachment_ids)
+
+    department = result.departments[0] if result.departments else "unassigned"
+    task = create_task(project_id=project_id, agent=department, input_text=prompt)
+
+    generation = create_generation(
+        task_id=task["id"],
+        model="chain-of-command",
+        prompt_version="v2",
+        output=result.body,
+        input_tokens=0,
+        output_tokens=0,
+        latency=0,
+    )
 
     return {
-        "decision": decision,
-        "output": output,
-        "project_id": project_id,
-        "knowledge_used": len(all_context),
-        "compliance": compliance,
+        "task": task,
+        "generation": generation,
+        **result.to_dict(),
     }

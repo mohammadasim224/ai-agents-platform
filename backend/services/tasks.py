@@ -1,33 +1,22 @@
 from __future__ import annotations
 
-from backend.agents.manager import decide_agent
-from backend.database.database import create_generation, create_task, get_task, list_tasks
-from backend.services.generation import generate_for_prompt
+from backend.database.database import get_task, list_tasks
+from backend.services.generation import generate_and_record
 
 
-def enqueue_task(project_id: str, prompt: str, agent: str | None = None) -> dict:
-    decision = decide_agent(prompt)
-    selected_agent = agent or decision.get("agent", "ad_copywriting")
-    marketing_terms = ("ad", "advert", "campaign", "copy", "headline", "creative")
-    if not agent and any(term in prompt.lower() for term in marketing_terms):
-        selected_agent = "ad_copywriting"
-    task = create_task(project_id=project_id, agent=selected_agent, input_text=prompt)
-    result = generate_for_prompt(prompt, project_id)
-    generation = create_generation(
-        task_id=task["id"],
-        model="openrouter/free",
-        prompt_version="v1",
-        output=result["output"],
-        input_tokens=0,
-        output_tokens=0,
-        latency=0,
-    )
-    return {
-        "task": task,
-        "decision": decision,
-        "generation": generation,
-        "output": result["output"],
-    }
+def enqueue_task(
+    project_id: str,
+    prompt: str,
+    agent: str | None = None,
+    *,
+    attachment_ids: list[str] | None = None,
+) -> dict:
+    """Run the chain of command and persist the outcome as a task.
+
+    The `agent` argument is accepted for API compatibility but is ignored: routing
+    is the manager's responsibility and is never overridden by a caller.
+    """
+    return generate_and_record(prompt, project_id, attachment_ids=attachment_ids)
 
 
 def get_task_status(task_id: str) -> dict:
