@@ -75,6 +75,10 @@ LLM_RETRY_BACKOFF_SECONDS = get_env_float("LLM_RETRY_BACKOFF_SECONDS", 1.5)
 LLM_TIMEOUT_SECONDS = get_env_int("LLM_TIMEOUT_SECONDS", 120)
 LLM_TEMPERATURE = get_env_float("LLM_TEMPERATURE", 0.4)
 LLM_MAX_TOKENS = get_env_int("LLM_MAX_TOKENS", 4000)
+# Reasoning models count their hidden thinking against `max_tokens`, so a budget
+# that suits a plain model can be spent entirely on reasoning, leaving no answer.
+# When that happens the call is retried with a doubled budget, up to this cap.
+LLM_MAX_TOKENS_CEILING = get_env_int("LLM_MAX_TOKENS_CEILING", 16000)
 
 # Speed controls. The pipeline makes many sequential provider calls, so the
 # wall-clock cost is dominated by how many calls run one after another. These
