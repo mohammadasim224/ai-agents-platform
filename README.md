@@ -151,6 +151,8 @@ Set these in `.env` to tune the pipeline:
 | --- | --- | --- |
 | `MANAGER_MODEL`, `MARKETING_MODEL`, `SALES_MODEL`, `AUTOMATION_MODEL`, `EVALUATION_MODEL` | `DEFAULT_MODEL` | Per-role model selection. |
 | `LLM_MAX_ATTEMPTS` | `3` | Retries for transient provider failures. |
+| `LLM_MAX_TOKENS` | `4000` | Output token budget per model call. Reasoning models spend part of it thinking. |
+| `LLM_MAX_TOKENS_CEILING` | `16000` | When a reasoning model uses the whole budget before answering, the call is retried with double the budget, up to this cap. |
 | `MIN_DELIVERABLE_CHARS` | `120` | Shortest acceptable specialist deliverable. |
 | `BACKTEST_MIN_CALLS` | `20` | Minimum simulated calls per script backtest. |
 | `BACKTEST_TARGET_CONVERSION` | `0.5` | Required conversion rate. |

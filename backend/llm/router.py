@@ -26,6 +26,7 @@ import requests
 from backend.config import (
     LLM_MAX_ATTEMPTS,
     LLM_MAX_TOKENS,
+    LLM_MAX_TOKENS_CEILING,
     LLM_RETRY_BACKOFF_SECONDS,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
@@ -379,6 +380,26 @@ def _chat_completion(
             request_id = data.get("id")
             usage = data.get("usage") or {}
             finish_reason = choices[0].get("finish_reason")
+
+        if not content and finish_reason == "length":
+            # The output budget ran out before any visible text: a reasoning
+            # model spent all of `max_tokens` thinking. The same budget would
+            # fail the same way, so the retry doubles it instead.
+            budget = payload["max_tokens"]
+            ceiling = max(LLM_MAX_TOKENS_CEILING, budget)
+            if budget < ceiling and attempt < max_attempts:
+                payload["max_tokens"] = min(budget * 2, ceiling)
+                continue
+            raise ProviderError(
+                f"The model spent its whole {budget}-token output budget on reasoning "
+                "and returned no answer.",
+                stage="provider",
+                details={"model": model, "finish_reason": finish_reason, "max_tokens": budget},
+                hint=(
+                    "Raise LLM_MAX_TOKENS and LLM_MAX_TOKENS_CEILING in .env, or set this "
+                    "role's model to one that does not reason before answering."
+                ),
+            )
 
         if not content:
             if attempt < max_attempts:

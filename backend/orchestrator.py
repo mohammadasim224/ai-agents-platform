@@ -405,6 +405,7 @@ class Orchestrator:
                     "status": "error",
                     "content": "",
                     "message": f"The {name} department failed: {exc}",
+                    "hint": exc.user_hint if isinstance(exc, PipelineError) else "",
                     "subtask_results": [],
                 },
                 [],
@@ -455,7 +456,10 @@ class Orchestrator:
                     "code": "no_verified_answer",
                     "title": final.message,
                     "message": final.body,
-                    "hint": "Add more detail about the exact deliverable you need.",
+                    "hint": next(
+                        (answer["hint"] for answer in department_answers if answer.get("hint")),
+                        "Add more detail about the exact deliverable you need.",
+                    ),
                     "stage": "finalize",
                     "details": {"departments": triage.departments},
                 },
@@ -706,6 +710,7 @@ class Orchestrator:
                     "status": "error",
                     "content": "",
                     "message": str(exc),
+                    "hint": exc.user_hint if isinstance(exc, PipelineError) else "",
                 },
                 [],
                 [],
@@ -745,6 +750,7 @@ class Orchestrator:
                         result["message"] for result in results if result.get("message")
                     )
                     or "No specialist produced a usable deliverable.",
+                    "hint": next((result["hint"] for result in results if result.get("hint")), ""),
                     "subtask_results": results,
                 },
                 trace,
@@ -804,6 +810,10 @@ class Orchestrator:
         deliverable = None
         revision_notes = ""
         failure_reason = ""
+        # The fix-it hint of the error behind `failure_reason`, when there is
+        # one. A provider failure needs a configuration fix, not a new request,
+        # so its hint has to reach the user instead of a generic one.
+        failure_hint = ""
 
         for attempt in range(1, MAX_REVISIONS_PER_SUBTASK + 2):
             # Stop revising once the job's wall-clock budget is spent or the user
@@ -849,6 +859,7 @@ class Orchestrator:
                 )
             except PipelineError as exc:
                 failure_reason = exc.message
+                failure_hint = exc.user_hint
                 self._note(
                     f"{specialist.title} attempt {attempt} failed: {exc.message}",
                     stage="specialist",
@@ -919,6 +930,7 @@ class Orchestrator:
                 )
                 if not backtest.passed:
                     failure_reason = backtest.summary()
+                    failure_hint = ""
                     revision_notes = (
                         "Your script did not reach the conversion target. "
                         "Fix these specific gaps and return the full revised script:\n"
@@ -957,6 +969,7 @@ class Orchestrator:
                     )
                 )
                 failure_reason = f"Blocked by compliance rules: {blocked_reasons}"
+                failure_hint = ""
                 revision_notes = (
                     "Your deliverable violated mandatory compliance rules and was "
                     "rejected. Rewrite the affected lines and return the full revised "
@@ -1002,6 +1015,7 @@ class Orchestrator:
                 break
 
             failure_reason = verification["reason"] or "The head rejected the deliverable."
+            failure_hint = ""
             revision_notes = verification["fix_instruction"] or "\n".join(
                 f"- {issue}" for issue in verification["issues"]
             )
@@ -1015,6 +1029,7 @@ class Orchestrator:
                     "content": "",
                     "message": failure_reason
                     or "The specialist could not complete the subtask.",
+                    "hint": failure_hint,
                 },
                 trace,
                 backtests,
