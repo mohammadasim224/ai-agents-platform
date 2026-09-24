@@ -3,6 +3,28 @@
 FastAPI backend and browser frontend for an AI business team organized as a
 strict chain of command.
 
+### Workspace features
+
+The frontend is a chat-first workspace with:
+
+- **Chat** — conversation UI with background job polling, typing indicator,
+  attachments, and artifact downloads.
+- **Profiles** — create multiple business profiles. Each profile is a complete
+  picture of one business (who they are, who they sell to, what they offer,
+  brand voice, compliance rules).
+- **Knowledge builder** — fill in a profile form and the AI converts it into a
+  real knowledge base under `knowledge/business/` that the whole team grounds
+  every deliverable in. Falls back to a deterministic template when the model
+  provider is unavailable.
+- **Queue** — long-running jobs (generation, knowledge builds) run in a
+  background worker thread. The sidebar badge shows active jobs and the Queue
+  page shows status for every job.
+- **Memory** — persistent facts injected into every agent run so the team
+  remembers your rules across conversations.
+- **History** — every conversation, searchable and resumable.
+- **Knowledge library** — upload, create, preview, and re-index the documents
+  the agents use.
+
 ### Architecture
 
 The **Manager** is the top of the chain of command and the **only** agent that
@@ -71,6 +93,13 @@ blocked rather than delivered.
 | `GET /agents` | The org chart. Only the manager has `user_facing: true`. |
 | `GET /evaluations/quality-gates` | The measured bars the pipeline enforces. |
 | `GET /artifacts/{filename}` | Download a deliverable file. |
+| `GET/POST /profiles` | List and create business profiles. |
+| `PUT/DELETE /profiles/{id}` | Update or delete a profile. |
+| `POST /profiles/{id}/build-knowledge` | Convert a profile into a knowledge base. |
+| `GET/POST /conversations` | List and create chat conversations. |
+| `POST /conversations/{id}/messages` | Send a message and enqueue a generation job. |
+| `GET/POST/DELETE /memory` | Persistent facts injected into every run. |
+| `GET /queue` | List background jobs and their status. |
 
 Every response carries a `trace` showing the stage-by-stage flow, so you can see
 exactly how work moved through the organization.
@@ -89,19 +118,30 @@ python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Add the OpenRouter key to `.env`, then start the backend:
+Add the OpenRouter key to `.env`, then start the whole system with one command:
+
+```bash
+python run.py
+```
+
+`run.py` starts the backend, serves the frontend, and opens your browser at
+`http://127.0.0.1:5500`. Press Ctrl+C once to stop everything.
+
+Useful flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `--no-browser` | Don't open a browser window. |
+| `--api-port 9000` | Run the backend on a different port. |
+| `--ui-port 6000` | Serve the frontend on a different port. |
+| `--reload` | Auto-reload the backend on code changes. |
+
+If you prefer to run the pieces separately:
 
 ```bash
 bash scripts/start-macos.sh
-```
-
-In a second terminal, serve the frontend:
-
-```bash
 python3 -m http.server 5500 --directory frontend/app
 ```
-
-Open `http://localhost:5500`.
 
 ### Configuration
 

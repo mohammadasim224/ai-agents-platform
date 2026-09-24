@@ -138,10 +138,35 @@ def plan(
 
     raw_subtasks = payload.get("subtasks")
     if not isinstance(raw_subtasks, list) or not raw_subtasks:
+        # A department head may decline to plan on purpose. When the brief cannot
+        # be grounded (for example it references a script that was never
+        # attached), the model answers with `{"status": "error", "message": ...}`
+        # instead of a plan. That message explains the real problem, so it is
+        # carried through as the failure message and hint rather than being
+        # flattened into a generic "did not produce any subtasks".
+        refusal = payload.get("message") if payload.get("status") == "error" else None
+        if isinstance(refusal, str) and refusal.strip():
+            reason = refusal.strip()
+            raise PlanningError(
+                f"The {department.title} could not plan this request.",
+                stage="planning",
+                hint=reason,
+                details={
+                    "department": department.name,
+                    "refused": True,
+                    "raw_output": result["content"][:1200],
+                },
+            )
         raise PlanningError(
             f"The {department.title} did not produce any subtasks.",
             stage="planning",
-            details={"department": department.name},
+            # Keep the raw model output so a failure can be diagnosed from
+            # the trace and the live activity feed instead of guessing what
+            # the model actually returned.
+            details={
+                "department": department.name,
+                "raw_output": result["content"][:1200],
+            },
         )
 
     valid_specialists = {spec.name for spec in department.specialist_definitions()}

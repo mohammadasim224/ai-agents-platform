@@ -13,7 +13,7 @@ Every specialist runs the same way:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from backend.agents.registry import Specialist
 from backend.config import MIN_DELIVERABLE_CHARS
@@ -104,8 +104,14 @@ def run(
     attachment_context: str = "",
     extra_rules: str = "",
     revision_notes: str = "",
+    on_delta: Callable[[str], None] | None = None,
 ) -> Deliverable:
-    """Run a specialist agent and return its verified deliverable."""
+    """Run a specialist agent and return its verified deliverable.
+
+    `on_delta` receives the deliverable text as it is generated, so the caller
+    can stream the work live. It is optional: without it the call is a normal
+    blocking request.
+    """
     system_prompt = compose_system_prompt(
         specialist.prompt,
         knowledge_categories=specialist.knowledge_categories,
@@ -131,11 +137,13 @@ def run(
             f"{revision_notes.strip()}"
         )
 
+    prompt = "\n\n".join(sections)
     result = route_prompt(
         specialist.department,
-        "\n\n".join(sections),
+        prompt,
         system_prompt=system_prompt,
         temperature=0.5,
+        on_delta=on_delta,
     )
     content = str(result.get("content", "")).strip()
     _validate_deliverable(specialist, content)
@@ -150,21 +158,4 @@ def run(
             "latency_ms": result.get("latency_ms"),
             "attempts": result.get("attempts"),
         },
-    )
-
-
-def run_error(
-    specialist: Specialist,
-    message: str,
-    *,
-    metrics: dict[str, Any] | None = None,
-) -> Deliverable:
-    """Represent a failed specialist run without raising."""
-    return Deliverable(
-        specialist=specialist.name,
-        department=specialist.department,
-        content="",
-        status="error",
-        message=message,
-        metrics=metrics or {},
     )

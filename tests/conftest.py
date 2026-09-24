@@ -4,6 +4,10 @@ Tests must be fast and deterministic, so the model provider is stubbed for the
 whole suite by default. Tests that need specific model behaviour override
 `route_prompt` themselves with monkeypatch.
 
+Tests also run against a temporary SQLite database. Without this, the suite
+would write conversations and queue jobs into the real `data/` database and
+leave stale `running` rows behind when the test process exits mid-job.
+
 Set `ALLOW_LIVE_PROVIDER=1` to run against the real provider instead.
 """
 
@@ -14,6 +18,15 @@ import os
 import pytest
 
 from backend.errors import ProviderError
+
+
+@pytest.fixture(autouse=True)
+def _isolate_database(tmp_path, monkeypatch):
+    """Point every database call at a throwaway file for this test."""
+    from backend.database import database
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "test.db")
+    database.initialize_database()
 
 
 @pytest.fixture(autouse=True)

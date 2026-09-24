@@ -12,7 +12,6 @@ output they must produce.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
 
 from backend.errors import PipelineError
 
@@ -134,11 +133,6 @@ DEPARTMENTS: dict[str, Department] = {
         specialists=("lead_nurturing", "lead_reminding"),
     ),
 }
-
-
-@lru_cache(maxsize=1)
-def manager_prompt_name() -> str:
-    return "manager/manager"
 
 
 def department_names() -> list[str]:

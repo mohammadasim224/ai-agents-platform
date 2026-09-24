@@ -50,7 +50,6 @@ def create_artifact(
     *,
     title: str,
     extension: str = "txt",
-    owner: str = "manager",
 ) -> Artifact:
     """Write deliverable content to a downloadable file."""
     if not content.strip():

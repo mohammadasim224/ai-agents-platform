@@ -1,258 +1,1359 @@
 (() => {
-  const content = document.querySelector('.content');
-  const studioTemplate = content.innerHTML;
-  const historyKey = 'voltaik-chat-history';
-  const settingsKey = 'voltaik-settings';
+  'use strict';
+
+  const content = document.getElementById('content');
   const apiBase = `http://${window.location.hostname || '127.0.0.1'}:8000`;
+  const state = {
+    profileId: localStorage.getItem('voltaik-profile') || 'default',
+    conversationId: localStorage.getItem('voltaik-conversation') || null,
+    // Attachments are objects, not bare names: the UI shows the size and lets a
+    // file be removed before the message is sent.
+    attachments: [],
+    polling: null,
+    // Whether the last backend call succeeded. Drives the sidebar status and
+    // lets the UI recover automatically when the backend comes back.
+    connected: true,
+    // Timing constants fetched from the backend so no estimate is hard-coded in
+    // the UI.
+    defaultEstimate: null,
+    queueMaxRuntime: null,
+  };
 
-  const pageStyles = document.createElement('style');
-  pageStyles.textContent = `
-    @keyframes page-enter { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes item-enter { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-    .page-view { padding-bottom: 40px; animation:page-enter .6s cubic-bezier(.23,1,.32,1) both; }
-    .page-header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:24px; }
-    .page-header p { max-width:520px; color:var(--muted); font-size:13px; margin-top:10px; }
-    .page-actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .primary-action,.secondary-action { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; padding:0 13px; border-radius:8px; font-size:11px; font-weight:700; }
-    .primary-action { color:#180b2f; background:linear-gradient(120deg,var(--violet2),var(--amber)); }
-    .secondary-action { color:#ddd3eb; border:1px solid var(--line); background:rgba(255,255,255,.035); }
-    .secondary-action:hover { border-color:rgba(173,107,255,.5); color:var(--paper); }
-    .data-panel { padding:18px; margin-bottom:18px; animation:item-enter .55s .12s both; }
-    .file-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
-    .file-card { position:relative; min-height:172px; padding:15px; border:1px solid var(--line); border-radius:11px; background:rgba(255,255,255,.025); animation:item-enter .45s both; transition:transform .25s,border-color .25s,background .25s; }
-    .file-card:nth-child(1) { animation-delay:.16s; } .file-card:nth-child(2) { animation-delay:.22s; } .file-card:nth-child(3) { animation-delay:.28s; } .file-card:nth-child(4) { animation-delay:.34s; }
-    .file-card:hover { transform:translateY(-4px); border-color:rgba(173,107,255,.42); background:rgba(139,59,255,.07); }
-    .file-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
-    .file-type { display:grid; place-items:center; width:38px; height:38px; border-radius:9px; color:#180b2f; font-size:10px; font-weight:800; background:var(--violet2); }
-    .file-type.pdf { color:#fff0f0; background:#c95570; } .file-type.docx { color:#e7f0ff; background:#487bd1; } .file-type.txt { color:#20172d; background:var(--amber); } .file-type.other { color:#eee5ff; background:#694d8d; }
-    .file-card h3 { overflow:hidden; margin:16px 0 4px; color:#e5dcf1; font:600 12px 'Bricolage Grotesque',sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-    .file-card small { color:var(--muted); font-size:10px; }
-    .file-card-actions { display:flex; gap:6px; margin-top:15px; }
-    .preview-modal { position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:22px; background:rgba(3,2,9,.76); backdrop-filter:blur(8px); animation:page-enter .25s both; }
-    .preview-dialog { width:min(760px,100%); max-height:min(720px,90vh); overflow:auto; padding:20px; border:1px solid rgba(173,107,255,.35); border-radius:14px; background:#160a2d; box-shadow:0 25px 100px rgba(0,0,0,.5); }
-    .preview-dialog header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; } .preview-dialog h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .preview-content { min-height:260px; max-height:520px; overflow:auto; padding:16px; color:#ddd3eb; border:1px solid var(--line); border-radius:9px; background:rgba(5,3,13,.7); font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; }
-    .create-form { display:grid; grid-template-columns:180px 1fr auto; gap:10px; align-items:end; } .create-form label { display:grid; gap:6px; color:#d9cdeb; font-size:10px; } .create-form textarea { min-height:42px; height:42px; resize:vertical; padding:10px; font-size:11px; }
-    .data-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
-    .search-input,.setting-input { width:100%; padding:10px 12px; color:var(--paper); border:1px solid var(--line); border-radius:8px; outline:0; background:rgba(5,3,13,.6); }
-    .search-input { max-width:300px; }
-    .search-input:focus,.setting-input:focus { border-color:rgba(173,107,255,.6); }
-    .data-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px 0; border-top:1px solid var(--line); animation:item-enter .42s both; }
-    .data-row:nth-child(1) { animation-delay:.18s; } .data-row:nth-child(2) { animation-delay:.24s; } .data-row:nth-child(3) { animation-delay:.30s; } .data-row:nth-child(4) { animation-delay:.36s; } .data-row:nth-child(5) { animation-delay:.42s; } .data-row:nth-child(6) { animation-delay:.48s; }
-    .data-row:first-child { border-top:0; }
-    .data-row strong { display:block; color:#e5dcf1; font-size:12px; font-weight:600; }
-    .data-row small { color:var(--muted); font-size:10px; }
-    .row-actions { display:flex; gap:7px; flex-shrink:0; }
-    .mini-action { padding:6px 9px; color:var(--violet2); border:1px solid var(--line); border-radius:6px; background:transparent; font-size:10px; }
-    .mini-action.danger { color:#ff9d9d; }
-    .mini-action:hover { border-color:rgba(173,107,255,.5); }
-    .empty-state { padding:28px 8px; color:#766b88; text-align:center; font-size:12px; }
-    .result-error { padding:14px; border:1px solid rgba(255,120,120,.35); border-radius:9px; background:rgba(120,30,50,.18); }
-    .result-error strong { display:block; margin-bottom:6px; color:#ffb4b4; font-size:13px; }
-    .result-error p { margin:0; color:#e6d5dc; font-size:12px; }
-    .result-error .result-hint { margin-top:8px; color:var(--muted); font-size:11px; }
-    .result-trace { margin-top:12px; border:1px solid var(--line); border-radius:9px; background:rgba(5,3,13,.5); }
-    .result-trace summary { padding:11px 13px; color:#cdbfe4; cursor:pointer; font-size:11px; }
-    .result-trace ul { margin:0; padding:0 13px 13px; list-style:none; }
-    .trace-row { display:grid; grid-template-columns:96px 120px 1fr; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:10px; }
-    .trace-stage { color:var(--violet2); text-transform:uppercase; letter-spacing:.08em; font-weight:700; }
-    .trace-agent { color:#d8cbe9; }
-    .trace-summary { color:var(--muted); }
-    .trace-error .trace-stage, .trace-error .trace-summary { color:#ff9d9d; }
-    .artifact-link { display:inline-flex; align-items:center; gap:8px; margin-top:12px; padding:10px 13px; color:#180b2f; border-radius:8px; background:linear-gradient(120deg,var(--amber),#ffd980); font-size:11px; font-weight:700; text-decoration:none; }
-    .artifact-link:hover { transform:translateY(-1px); }
-    .artifact-link svg { width:15px; height:15px; }
-    .agent-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
-    .team-group { margin-bottom:26px; }
-    .team-group h2 { margin-bottom:12px; color:#cdbfe4; font:700 13px 'Bricolage Grotesque',sans-serif; }
-    .agent-card { padding:16px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.025); animation:item-enter .5s both; transition:transform .25s,border-color .25s,background .25s; }
-    .agent-card:nth-child(1) { animation-delay:.16s; } .agent-card:nth-child(2) { animation-delay:.24s; } .agent-card:nth-child(3) { animation-delay:.32s; } .agent-card:hover { transform:translateY(-4px); border-color:rgba(173,107,255,.4); background:rgba(139,59,255,.07); }
-    .agent-card .agent-card-top { display:flex; align-items:center; gap:10px; margin-bottom:15px; }
-    .agent-card .avatar { color:var(--paper); background:var(--plum2); }
-    .agent-card h3 { font:700 14px 'Bricolage Grotesque',sans-serif; }
-    .agent-card p { min-height:42px; color:var(--muted); font-size:11px; }
-    .setting-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    .setting { display:grid; gap:7px; }
-    .setting label { color:#d9cdeb; font-size:11px; }
-    .setting small { color:var(--muted); font-size:10px; }
-    .switch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
-    .switch { position:relative; width:36px; height:20px; flex:none; }
-    .switch input { opacity:0; width:0; height:0; }
-    .slider { position:absolute; inset:0; border-radius:20px; background:#39264f; cursor:pointer; transition:.2s; }
-    .slider:before { position:absolute; content:''; width:14px; height:14px; left:3px; top:3px; border-radius:50%; background:#aa9bbd; transition:.2s; }
-    .switch input:checked + .slider { background:var(--violet); }
-    .switch input:checked + .slider:before { transform:translateX(16px); background:white; }
-    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
-    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
-    @media (max-width:680px) { .page-header { display:block; } .page-actions { margin-top:18px; } .data-toolbar { align-items:stretch; flex-direction:column; } .search-input { max-width:none; } .agent-grid,.setting-grid { grid-template-columns:1fr; } .data-row { align-items:flex-start; flex-direction:column; } .row-actions { width:100%; } .file-grid { grid-template-columns:1fr 1fr; } .create-form { grid-template-columns:1fr; } }
-    @media (max-width:440px) { .file-grid { grid-template-columns:1fr; } }
-  `;
-  document.head.appendChild(pageStyles);
+  // The pipeline stages shown in the progress card, in order. The backend
+  // reports a stage name; this maps it to a position in the step strip.
+  const PIPELINE_STEPS = [
+    ['triage', 'Routing'],
+    ['rewrite', 'Brief'],
+    ['plan', 'Planning'],
+    ['specialist', 'Producing'],
+    ['backtest', 'Backtest'],
+    ['compliance', 'Compliance'],
+    ['verify', 'Verifying'],
+    ['combine', 'Combining'],
+    ['finalize', 'Finalizing'],
+    ['artifact', 'Packaging'],
+  ];
 
-  const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
-  const toast = message => { const element = document.getElementById('toast'); if (!element) return; element.textContent = message; element.classList.add('show'); window.setTimeout(() => element.classList.remove('show'), 2800); };
-  const historyItems = () => JSON.parse(localStorage.getItem(historyKey) || '[]');
-  const saveSettings = settings => localStorage.setItem(settingsKey, JSON.stringify(settings));
-  const getSettings = () => ({ name:'Solar growth team', model:'openrouter/free', notifications:true, ...JSON.parse(localStorage.getItem(settingsKey) || '{}') });
-  const formatSize = size => `${Math.max(0.1, size / 1024).toFixed(1)} KB`;
+  // ---------------------------------------------------------------- helpers
 
-  function setActive(route) {
+  const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+  let toastTimer = null;
+  const toast = (message, variant = 'info') => {
+    const element = document.getElementById('toast');
+    if (!element) return;
+    element.textContent = message;
+    element.classList.toggle('error', variant === 'error');
+    element.classList.add('show');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => element.classList.remove('show'), 3600);
+  };
+  const formatSize = size => {
+    if (!Number.isFinite(size)) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  const formatDuration = seconds => {
+    const total = Math.max(0, Math.round(seconds));
+    if (total < 60) return `${total}s`;
+    const minutes = Math.floor(total / 60);
+    const rest = total % 60;
+    if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  };
+  const formatTime = value => {
+    if (!value) return '';
+    const date = new Date(String(value).replace(' ', 'T'));
+    if (isNaN(date.getTime())) return String(value);
+    return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+  const initials = name => (name || '?').trim().slice(0, 2).toUpperCase();
+  const api = async (path, options = {}) => {
+    const response = await fetch(`${apiBase}${path}`, options);
+    let data = {};
+    try { data = await response.json(); } catch (error) { data = {}; }
+    if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+    return data;
+  };
+  const post = (path, body) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const put = (path, body) => api(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const del = path => api(path, { method: 'DELETE' });
+
+  // Uploads use XMLHttpRequest rather than fetch because only XHR exposes
+  // upload progress events, which the attachment chips display.
+  const uploadFile = (file, onProgress) => new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', `${apiBase}/knowledge/upload`);
+    request.upload.addEventListener('progress', event => {
+      if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
+    });
+    request.addEventListener('load', () => {
+      let data = {};
+      try { data = JSON.parse(request.responseText || '{}'); } catch (error) { data = {}; }
+      if (request.status >= 200 && request.status < 300) resolve(data);
+      else reject(new Error(data.detail || `Upload failed (${request.status})`));
+    });
+    request.addEventListener('error', () => reject(new Error('The upload could not reach the backend.')));
+    request.addEventListener('abort', () => reject(new Error('The upload was cancelled.')));
+    const body = new FormData();
+    body.append('file', file);
+    request.send(body);
+  });
+
+  const setActive = route => {
     document.querySelectorAll('.nav a').forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${route}`));
-    const crumb = document.querySelector('.crumbs b');
-    if (crumb) crumb.textContent = route === 'studio' ? 'Studio' : route.replace('-', ' ').replace(/\b\w/g, char => char.toUpperCase());
-  }
+    const crumb = document.getElementById('crumb');
+    if (crumb) crumb.textContent = route === 'chat' ? 'Chat' : route.replace('-', ' ').replace(/\b\w/g, char => char.toUpperCase());
+  };
 
-  function renderStudio() {
-    content.innerHTML = studioTemplate;
-    setActive('studio');
-    bindStudio();
-  }
+  // ---------------------------------------------------------- page lifecycle
+  //
+  // Every rendered page owns timers (queue auto-refresh) and polling loops
+  // (chat job progress). Navigating away replaces `#content`, so a surviving
+  // timer would write into detached nodes and throw. Each page registers its
+  // timers here, and `route` clears them before rendering the next page.
+  const pageTimers = new Set();
+  let pageToken = 0;
 
-  function renderHistory() {
-    const rows = historyItems();
-    content.innerHTML = `<div class="page-view"><div class="page-header"><div><div class="eyebrow">Workspace memory</div><h1>History</h1><p>Every prompt your team has completed, ready to pick up where you left off.</p></div><div class="page-actions"><button class="secondary-action" data-route="studio">New conversation</button></div></div><div class="panel data-panel"><div class="data-toolbar"><h2>Conversations</h2><input class="search-input" id="historySearch" placeholder="Search conversations" /></div><div id="historyRows"></div></div></div>`;
-    const renderRows = filter => {
-      const filtered = rows.filter(item => item.prompt.toLowerCase().includes(filter.toLowerCase()));
-      document.getElementById('historyRows').innerHTML = filtered.length ? filtered.map((item, index) => `<div class="data-row"><div><strong>${escapeHtml(item.prompt)}</strong><small>${escapeHtml(item.time || 'Saved conversation')}</small></div><div class="row-actions"><button class="mini-action" data-open-history="${index}">Open</button><button class="mini-action danger" data-delete-history="${index}">Delete</button></div></div>`).join('') : '<div class="empty-state">No conversations match that search.</div>';
-      document.querySelectorAll('[data-open-history]').forEach(button => button.addEventListener('click', () => { const item = filtered[Number(button.dataset.openHistory)]; localStorage.setItem('voltaik-pending-prompt', item.prompt); navigate('studio'); toast('Conversation loaded into Studio'); }));
-      document.querySelectorAll('[data-delete-history]').forEach(button => button.addEventListener('click', () => { const target = filtered[Number(button.dataset.deleteHistory)]; localStorage.setItem(historyKey, JSON.stringify(rows.filter(item => item.prompt !== target.prompt))); renderHistory(); toast('Conversation deleted'); }));
-    };
-    renderRows('');
-    document.getElementById('historySearch').addEventListener('input', event => renderRows(event.target.value));
-    document.querySelectorAll('[data-route]').forEach(button => button.addEventListener('click', () => navigate(button.dataset.route)));
-  }
+  const trackTimer = id => {
+    pageTimers.add(id);
+    return id;
+  };
 
-  async function renderKnowledge() {
-    content.innerHTML = `<div class="page-view"><div class="page-header"><div><div class="eyebrow">Business context</div><h1>Knowledge files</h1><p>Manage the documents your AI team can use when it creates, evaluates, and plans.</p></div><div class="page-actions"><button class="secondary-action" id="reindexButton">Re-index library</button><button class="primary-action" id="knowledgeUploadButton">+ Upload file</button></div></div><div class="panel data-panel"><div class="data-toolbar"><h2>Library</h2><span class="eyebrow" id="knowledgeCount">Loading...</span></div><div id="knowledgeRows"><div class="empty-state">Loading your knowledge library...</div></div></div><div class="panel data-panel"><div class="panel-title"><h2>Create a file</h2><span class="eyebrow">TXT · PDF · DOCX</span></div><div class="create-form"><label>Filename<input class="setting-input" id="createFilename" value="campaign-brief.docx" /></label><label>Content<textarea id="createContent" placeholder="Write the document content here..."></textarea></label><button class="primary-action" id="createFileButton">Create file</button></div></div><input id="knowledgeInput" type="file" hidden multiple accept=".txt,.md,.csv,.json,.html,.pdf,.doc,.docx" /></div>`;
-    const renderRows = async () => {
-      const [documents, uploads] = await Promise.all([fetch(`${apiBase}/knowledge`).then(response => response.json()), fetch(`${apiBase}/knowledge/uploads`).then(response => response.json())]);
-      const rows = [...uploads.map(file => ({ name:file.filename, category:'Uploaded context', meta:formatSize(file.size), extension:file.extension || '.file', uploaded:true })), ...documents.map(file => ({ name:file.document, category:file.category, meta:'Indexed knowledge', extension:'.md', uploaded:false }))];
-      document.getElementById('knowledgeCount').textContent = `${rows.length} sources`;
-      document.getElementById('knowledgeRows').innerHTML = rows.length ? `<div class="file-grid">${rows.map((file, index) => { const type = file.extension === '.pdf' ? 'pdf' : file.extension === '.docx' ? 'docx' : file.extension === '.txt' ? 'txt' : 'other'; return `<article class="file-card"><div class="file-card-top"><div class="file-type ${type}">${type === 'other' ? 'FILE' : type.toUpperCase()}</div><span class="eyebrow">${file.uploaded ? 'Uploaded' : 'Indexed'}</span></div><h3 title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</h3><small>${escapeHtml(file.category)} · ${file.meta}</small><div class="file-card-actions"><button class="mini-action" data-preview-file="${index}">Preview</button>${file.uploaded ? `<button class="mini-action danger" data-delete-file="${index}">Remove</button>` : ''}</div></article>`; }).join('')}</div>` : '<div class="empty-state">No knowledge files found.</div>';
-      document.querySelectorAll('[data-preview-file]').forEach(button => button.addEventListener('click', async () => { const file = rows[Number(button.dataset.previewFile)]; if (!file.uploaded) return toast('This indexed source is available to the AI team.'); const response = await fetch(`${apiBase}/knowledge/uploads/${encodeURIComponent(file.name)}/preview`); const data = await response.json(); if (!response.ok) return toast(data.detail || 'Preview unavailable'); showPreview(data.filename, data.preview); }));
-      document.querySelectorAll('[data-delete-file]').forEach(button => button.addEventListener('click', async () => { const file = rows[Number(button.dataset.deleteFile)]; const response = await fetch(`${apiBase}/knowledge/uploads/${encodeURIComponent(file.name)}`, { method:'DELETE' }); toast(response.ok ? `${file.name} removed` : 'Could not remove file'); renderRows(); }));
-    };
-    const input = document.getElementById('knowledgeInput');
-    document.getElementById('knowledgeUploadButton').addEventListener('click', () => input.click());
-    input.addEventListener('change', async event => { for (const file of event.target.files) { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiBase}/knowledge/upload`, { method:'POST', body }); if (response.ok) toast(`${file.name} uploaded`); else toast(`Could not upload ${file.name}`); } input.value = ''; renderRows(); });
-    document.getElementById('reindexButton').addEventListener('click', async event => { event.currentTarget.textContent = 'Re-indexing...'; const response = await fetch(`${apiBase}/knowledge/reindex`, { method:'POST' }); event.currentTarget.textContent = 'Re-index library'; toast(response.ok ? 'Knowledge library re-indexed' : 'Re-index failed'); });
-    document.getElementById('createFileButton').addEventListener('click', async event => { const filename = document.getElementById('createFilename').value.trim(); const contentText = document.getElementById('createContent').value; event.currentTarget.textContent = 'Creating...'; const response = await fetch(`${apiBase}/knowledge/create`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ filename, content:contentText }) }); const data = await response.json(); event.currentTarget.textContent = 'Create file'; if (!response.ok) return toast(data.detail || 'Could not create file'); toast(`${data.filename} created`); renderRows(); });
-    try { await renderRows(); } catch (error) { document.getElementById('knowledgeRows').innerHTML = '<div class="empty-state">Could not reach the knowledge service. Check that the backend is running.</div>'; }
-  }
+  const clearPageWork = () => {
+    pageTimers.forEach(id => {
+      window.clearTimeout(id);
+      window.clearInterval(id);
+    });
+    pageTimers.clear();
+    pageToken += 1;
+  };
 
-  function showPreview(filename, preview) {
-    const modal = document.createElement('div');
-    modal.className = 'preview-modal';
-    modal.innerHTML = `<div class="preview-dialog"><header><h2>${escapeHtml(filename)}</h2><button class="icon-button" data-close-preview aria-label="Close preview">×</button></header><div class="preview-content">${escapeHtml(preview || 'This file has no readable text preview.')}</div></div>`;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', event => { if (event.target === modal || event.target.closest('[data-close-preview]')) modal.remove(); });
-  }
+  // A polling loop checks this to know whether its page is still on screen.
+  const isCurrentPage = token => token === pageToken;
 
-  async function renderTeam() {
-    content.innerHTML = `<div class="page-view"><div class="page-header"><div><div class="eyebrow">Chain of command</div><h1>AI team</h1><p>The manager is the only agent that talks to you. It routes work to a department head, who assigns specialists and verifies their work before anything comes back.</p></div></div><div class="agent-grid" id="agentGrid"><div class="empty-state">Loading your team...</div></div></div>`;
+  // The file input lives in the page shell rather than inside a route's markup,
+  // so every visit to Chat or Knowledge would otherwise add another `change`
+  // listener to the same node, uploading each chosen file once per past visit.
+  // Replacing the node with a clone drops the old listeners before attaching.
+  const bindFilePicker = handler => {
+    const previous = document.getElementById('fileInput');
+    const fresh = previous.cloneNode(true);
+    fresh.value = '';
+    previous.replaceWith(fresh);
+    fresh.addEventListener('change', event => handler(event, fresh));
+    return fresh;
+  };
+
+  const renderPage = (title, eyebrow, description, actions, bodyHtml) => `
+    <div class="page-view">
+      <div class="page-header">
+        <div><div class="eyebrow">${escapeHtml(eyebrow)}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>
+        <div class="page-actions">${actions}</div>
+      </div>
+      ${bodyHtml}
+    </div>`;
+
+  // ------------------------------------------------------------- progress UI
+
+  // The backend reports the time remaining from the job's own measured pace.
+  // Until it is far enough along to project, it reports the default estimate
+  // instead, so the label always shows something meaningful.
+  const etaText = progress => {
+    const info = progress || {};
+    if (Number(info.percent) >= 99.5) return 'Finishing up...';
+    const raw = info.eta_seconds !== null && info.eta_seconds !== undefined
+      ? Number(info.eta_seconds)
+      : Number(info.estimate_seconds);
+    if (!Number.isFinite(raw)) return 'estimating...';
+    return `~${formatDuration(raw)} remaining`;
+  };
+
+  const progressStepsHtml = stage => {
+    const index = PIPELINE_STEPS.findIndex(([key]) => key === stage);
+    return `<div class="progress-steps">${PIPELINE_STEPS.map(([key, label], position) => {
+      const cls = position < index ? 'done' : position === index ? 'current' : '';
+      return `<span class="${cls}">${escapeHtml(label)}</span>`;
+    }).join('')}</div>`;
+  };
+
+  // The live activity feed: the running commentary of what the pipeline is
+  // actually doing (which agent is working, what it produced, what a check
+  // found). The newest entry is last, and the newest entry may carry a `preview`
+  // of the text being generated right now, which is what makes the generation
+  // itself visible while it happens. Only the tail is shown so the card stays a
+  // readable size on a long job.
+  const ACTIVITY_VISIBLE = 8;
+  const activityFeedHtml = activity => {
+    const entries = Array.isArray(activity) ? activity.slice(-ACTIVITY_VISIBLE) : [];
+    if (!entries.length) return '';
+    const lines = entries.map(entry => {
+      const kind = entry.kind === 'ok' ? 'ok' : entry.kind === 'error' ? 'error' : '';
+      const agent = entry.agent ? `<span class="activity-agent">${escapeHtml(entry.agent)}</span>` : '';
+      const preview = entry.preview
+        ? `<pre class="activity-preview">${escapeHtml(entry.preview)}</pre>`
+        : '';
+      return `<div class="activity-line ${kind}">${agent}<span class="activity-text">${escapeHtml(entry.message || '')}</span>${preview}</div>`;
+    }).join('');
+    return `<div class="activity-feed" data-activity>${lines}</div>`;
+  };
+
+  // Build the live progress card shown while a job runs. `percent` is the
+  // backend's estimate; `eta` is derived from the job's own measured pace, so it
+  // reflects how long the work is actually taking rather than a guess made
+  // before it started. `cancellable` adds a button that asks the backend to stop
+  // the job at its next checkpoint.
+  const progressCardHtml = ({ label, detail, percent, eta, stage, cancellable, activity }) => `
+    <div class="progress-card">
+      <div class="avatar">AI</div>
+      <div class="progress-body">
+        <div class="progress-top">
+          <span class="progress-label">${escapeHtml(label || 'Working on your request')}</span>
+          <span class="progress-actions">
+            <span class="progress-percent">${Math.round(percent)}%</span>
+            ${cancellable ? '<button class="cancel-job" data-cancel-job title="Stop this request">Cancel</button>' : ''}
+          </span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:${Math.max(2, Math.min(100, percent))}%"></div></div>
+        <div class="progress-meta">
+          <span>${escapeHtml(detail || 'The manager is coordinating your team.')}</span>
+          <span class="eta" data-eta>${escapeHtml(eta || '')}</span>
+        </div>
+        ${progressStepsHtml(stage)}
+        ${activityFeedHtml(activity)}
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------- profile state
+
+  async function loadProfiles() {
     try {
-      const response = await fetch(`${apiBase}/agents`); const agents = await response.json();
-      const groups = [
-        { key: 'manager', label: 'Top of the chain' },
-        { key: 'department_head', label: 'Department heads' },
-        { key: 'specialist', label: 'Specialists' },
-      ];
-      const render = group => agents.filter(agent => agent.role === group.key).map(agent => `<article class="agent-card"><div class="agent-card-top"><div class="avatar">${escapeHtml(agent.name.slice(0,1))}</div><div><h3>${escapeHtml(agent.name)}</h3><small>${escapeHtml(agent.role === 'manager' ? 'Only user-facing agent' : agent.role.replace('_',' '))}</small></div></div><p>${escapeHtml(agent.description || '')}</p>${agent.requires_backtest ? '<small class="eyebrow">Backtested before delivery</small>' : ''}</article>`).join('');
-      document.getElementById('agentGrid').innerHTML = groups.map(group => { const cards = render(group); return cards ? `<div class="team-group"><h2>${escapeHtml(group.label)}</h2><div class="agent-grid">${cards}</div></div>` : ''; }).join('') || '<div class="empty-state">No agents are registered.</div>';
-    } catch (error) { document.getElementById('agentGrid').innerHTML = '<div class="empty-state">Could not reach the AI team service.</div>'; }
+      const profiles = await api('/profiles');
+      if (!profiles.length) {
+        const created = await post('/profiles', { name: 'My business', business_type: 'Service business', description: 'Describe what your business does.' });
+        profiles.push(created);
+      }
+      if (!profiles.some(p => p.id === state.profileId)) {
+        state.profileId = profiles[0].id;
+        localStorage.setItem('voltaik-profile', state.profileId);
+      }
+      const current = profiles.find(p => p.id === state.profileId) || profiles[0];
+      document.getElementById('profileName').textContent = current.name;
+      document.getElementById('profileType').textContent = current.business_type || 'Business profile';
+      state.connected = true;
+      return profiles;
+    } catch (error) {
+      markDisconnected();
+      return [];
+    }
   }
 
-  function renderSettings() {
-    const settings = getSettings();
-    content.innerHTML = `<div class="page-view"><div class="page-header"><div><div class="eyebrow">Workspace controls</div><h1>Settings</h1><p>Shape the workspace around your team and decide how it keeps you informed.</p></div><div class="page-actions"><button class="primary-action" id="saveSettings">Save changes</button></div></div><div class="panel data-panel"><h2>Workspace preferences</h2><div class="setting-grid" style="margin-top:18px"><div class="setting"><label for="workspaceName">Workspace name</label><input class="setting-input" id="workspaceName" value="${escapeHtml(settings.name)}" /><small>Shown in your sidebar and workspace header.</small></div><div class="setting"><label for="modelName">Default model</label><input class="setting-input" id="modelName" value="${escapeHtml(settings.model)}" /><small>Used as the default model selection for new tasks.</small></div></div><div class="switch-row" style="margin-top:20px"><div><strong>Workspace notifications</strong><small style="display:block">Show completion and upload feedback in this browser.</small></div><label class="switch"><input id="notifications" type="checkbox" ${settings.notifications ? 'checked' : ''} /><span class="slider"></span></label></div></div><div class="panel data-panel"><h2>Connection</h2><div class="data-row"><div><strong>Backend API</strong><small>${apiBase}</small></div><span class="status"><span class="dot"></span> Connected</span></div></div></div>`;
-    document.getElementById('saveSettings').addEventListener('click', () => { const next = { name:document.getElementById('workspaceName').value.trim() || 'Solar growth team', model:document.getElementById('modelName').value.trim() || 'openrouter/free', notifications:document.getElementById('notifications').checked }; saveSettings(next); document.querySelector('.workspace strong').textContent = next.name; toast('Settings saved'); });
+  // The backend can be down when the page loads (or restart while it is open).
+  // Without this, the sidebar would stay stuck on "Offline" forever even after
+  // the backend came back, which made uploads look broken when they were not.
+  function markDisconnected() {
+    state.connected = false;
+    const name = document.getElementById('profileName');
+    const type = document.getElementById('profileType');
+    if (name) name.textContent = 'Offline';
+    if (type) type.textContent = 'Backend unreachable';
   }
 
-  function bindStudio() {
-    const pending = localStorage.getItem('voltaik-pending-prompt');
-    if (pending) { const prompt = document.getElementById('prompt'); if (prompt) prompt.value = pending; localStorage.removeItem('voltaik-pending-prompt'); }
-    const selectedAgent = localStorage.getItem('voltaik-agent');
-    const chip = document.querySelector('.agent-chip');
-    if (selectedAgent && chip) { chip.innerHTML = `<i></i> ${escapeHtml(selectedAgent)} · ready`; localStorage.removeItem('voltaik-agent'); }
-    const generateButton = document.getElementById('generateButton');
-    const fileInput = document.getElementById('fileInput');
-    const prompt = document.getElementById('prompt');
-    const result = document.getElementById('result');
-    const attachmentIds = [];
+  // Re-check the connection and, when it recovers, restore the real profile and
+  // refresh whatever page is showing. Called on a timer so recovery is automatic.
+  async function recheckConnection() {
+    try {
+      await api('/health');
+    } catch (error) {
+      markDisconnected();
+      return;
+    }
+    if (!state.connected) {
+      state.connected = true;
+      await loadProfiles();
+      route();
+      toast('Reconnected to the backend');
+    }
+  }
 
-    const renderError = error => {
-      const title = escapeHtml(error?.title || 'The request could not be completed.');
-      const message = escapeHtml(error?.message || 'No further detail was provided.');
-      const hint = escapeHtml(error?.hint || '');
-      return `<div class="result-error"><strong>${title}</strong><p>${message}</p>${hint ? `<p class="result-hint">${hint}</p>` : ''}</div>`;
+  function switchProfile(profileId) {
+    state.profileId = profileId;
+    state.conversationId = null;
+    localStorage.setItem('voltaik-profile', profileId);
+    localStorage.removeItem('voltaik-conversation');
+    loadProfiles();
+    navigate('chat');
+    toast('Switched business profile');
+  }
+
+  // ------------------------------------------------------------------- chat
+
+  function renderChat() {
+    const conversationId = state.conversationId;
+    content.innerHTML = renderPage(
+      'Chat with your AI team',
+      'AI operations',
+      'The manager routes your request to the right department, specialists do the work, and the verified result comes back here.',
+      `<button class="secondary-action" id="newChatButton">+ New chat</button>`,
+      `<div class="chat-shell">
+        <section class="panel chat-panel" id="chatPanel">
+          <div class="chat-head"><h2 id="chatTitle">${conversationId ? 'Conversation' : 'New conversation'}</h2><span class="eyebrow" id="chatStatus">Ready</span></div>
+          <div class="chat-messages" id="chatMessages"><div class="empty-state">Loading conversation...</div></div>
+          <div class="attach-chips" id="attachChips" hidden></div>
+          <div class="chat-tools">
+            <button class="tool" id="attachTool"><svg viewBox="0 0 24 24"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.8-8.8"/></svg> Attach files</button>
+            <button class="tool" id="clearChatButton">Clear view</button>
+            <span class="eyebrow" style="margin-left:auto;align-self:center">Drop files anywhere on this panel</span>
+          </div>
+          <div class="chat-composer">
+            <textarea id="chatInput" placeholder="Ask your AI team to create, analyze, or plan... (Enter to send, Shift+Enter for newline)"></textarea>
+            <button class="send" id="sendButton" title="Send"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
+        </section>
+        <aside class="side-stack">
+          <div class="panel side-panel">
+            <div class="panel-title"><h3>Conversations</h3><button class="text-link" id="historyLink">View all</button></div>
+            <div class="history-list" id="chatHistoryList"><div class="empty-state">Loading...</div></div>
+          </div>
+          <div class="panel side-panel">
+            <div class="panel-title"><h3>Attachments</h3><span class="eyebrow" id="attachCount">0 files</span></div>
+            <div class="history-list" id="attachList"><div class="empty-state">No files attached.</div></div>
+          </div>
+        </aside>
+      </div>`
+    );
+    setActive('chat');
+    bindChat(conversationId);
+  }
+
+  function renderMessage(message) {
+    const meta = message.meta || {};
+    const isError = meta.status === 'error' || (message.role === 'assistant' && meta.error);
+    const chips = [];
+    if (meta.status === 'ok') chips.push(`<span class="chip ok">✓ delivered</span>`);
+    if (meta.status === 'error') chips.push(`<span class="chip err">✗ failed</span>`);
+    if (meta.status === 'cancelled') chips.push(`<span class="chip">⊘ cancelled</span>`);
+    if (meta.departments && meta.departments.length) chips.push(`<span class="chip">${escapeHtml(meta.departments.join(', '))}</span>`);
+    if (meta.knowledge_used) chips.push(`<span class="chip">${meta.knowledge_used} sources</span>`);
+    const artifacts = (meta.artifacts || []).map(file => `<a class="artifact-link" href="${apiBase}${escapeHtml(file.download_url)}" download>⬇ ${escapeHtml(file.filename)}</a>`).join('');
+    // The error block repeats the headline only when it adds information. The
+    // manager's error title is often already the message text, and showing the
+    // same sentence twice reads like a bug.
+    const errorTitle = meta.error ? (meta.error.message || meta.error.title || '') : '';
+    const errorText = errorTitle && errorTitle !== message.content
+      ? `<div class="text error">${escapeHtml(errorTitle)}</div>`
+      : '';
+    const errorHint = meta.error && meta.error.hint ? `<div class="text error">${escapeHtml(meta.error.hint)}</div>` : '';
+    return `<div class="msg ${message.role}">
+      <div class="avatar">${message.role === 'user' ? 'You' : 'AI'}</div>
+      <div class="bubble">
+        <span class="who">${message.role === 'user' ? 'You' : 'Manager · AI team'}</span>
+        <div class="text ${isError ? 'error' : ''}">${escapeHtml(message.content)}</div>
+        ${errorText}
+        ${errorHint}
+        ${artifacts}
+        ${chips.length ? `<div class="meta-row">${chips.join('')}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function bindChat(conversationId) {
+    const messagesEl = document.getElementById('chatMessages');
+    const input = document.getElementById('chatInput');
+    const sendButton = document.getElementById('sendButton');
+    const attachTool = document.getElementById('attachTool');
+    const fileInput = bindFilePicker(async (event, picker) => {
+      await uploadFiles(event.target.files);
+      picker.value = '';
+    });
+    const attachList = document.getElementById('attachList');
+    const attachCount = document.getElementById('attachCount');
+    const attachChips = document.getElementById('attachChips');
+    const chatPanel = document.getElementById('chatPanel');
+    const chatStatus = document.getElementById('chatStatus');
+    let pendingJob = null;
+    let progressEl = null;
+
+    const scrollBottom = () => { messagesEl.scrollTop = messagesEl.scrollHeight; };
+
+    const renderAttachments = () => {
+      const files = state.attachments;
+      attachCount.textContent = `${files.length} file${files.length === 1 ? '' : 's'}`;
+      attachList.innerHTML = files.length
+        ? files.map(file => `
+          <div class="attach-row">
+            <div class="a-body"><strong title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</strong><small>${escapeHtml(file.extension || 'file')} · ${formatSize(file.size)}</small></div>
+            <button class="remove" data-remove-attachment="${escapeHtml(file.name)}" title="Remove">×</button>
+          </div>`).join('')
+        : '<div class="empty-state">No files attached.</div>';
+      attachChips.hidden = files.length === 0;
+      attachChips.innerHTML = files.map(file => `
+        <span class="attach-chip">
+          <span class="name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+          <span class="size">${formatSize(file.size)}</span>
+          <button class="remove" data-remove-attachment="${escapeHtml(file.name)}" title="Remove">×</button>
+        </span>`).join('');
+      document.querySelectorAll('[data-remove-attachment]').forEach(button => button.addEventListener('click', () => {
+        state.attachments = state.attachments.filter(file => file.name !== button.dataset.removeAttachment);
+        renderAttachments();
+      }));
     };
 
-    const renderTrace = trace => {
-      if (!Array.isArray(trace) || !trace.length) return '';
-      const rows = trace.map(step => `<li class="trace-row trace-${escapeHtml(step.status)}"><span class="trace-stage">${escapeHtml(step.stage)}</span><span class="trace-agent">${escapeHtml(step.agent)}</span><span class="trace-summary">${escapeHtml(step.summary)}</span></li>`).join('');
-      return `<details class="result-trace"><summary>How the team worked through this (${trace.length} steps)</summary><ul>${rows}</ul></details>`;
-    };
-
-    const renderBacktests = backtests => {
-      if (!Array.isArray(backtests) || !backtests.length) return '';
-      const rows = backtests.map(item => {
-        const percent = Math.round((item.conversion_rate || 0) * 1000) / 10;
-        const target = Math.round((item.target_rate || 0) * 1000) / 10;
-        return `<li>${escapeHtml(item.passed ? 'Passed' : 'Failed')} · ${item.conversions}/${item.calls} calls converted (${percent}%) against a ${target}% target</li>`;
-      }).join('');
-      return `<details class="result-trace"><summary>Backtest results (${backtests.length})</summary><ul>${rows}</ul></details>`;
-    };
-
-    const renderArtifacts = artifacts => {
-      if (!Array.isArray(artifacts) || !artifacts.length) return '';
-      return artifacts.map(file => `<a class="artifact-link" href="${apiBase}${escapeHtml(file.download_url)}" download><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg> Download ${escapeHtml(file.filename)}</a>`).join('');
-    };
-
-    const generate = async () => {
-      if (!prompt.value.trim()) return toast('Add a prompt first.');
-      generateButton.disabled = true;
-      generateButton.textContent = 'Working with your team...';
-      result.className = 'result';
-      result.innerHTML = '<div class="result-content">The manager is reviewing your request...</div>';
+    // Upload one file, showing a chip with real byte-level progress while it
+    // transfers and a clear failure state if it does not.
+    const uploadOne = async file => {
+      const chip = document.createElement('span');
+      chip.className = 'attach-chip uploading';
+      chip.innerHTML = `<span class="name">${escapeHtml(file.name)}</span><span class="bar"><i></i></span>`;
+      attachChips.hidden = false;
+      attachChips.appendChild(chip);
+      const fill = chip.querySelector('.bar i');
       try {
-        const response = await fetch(`${apiBase}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: prompt.value.trim(), project_id: 'demo-project', attachment_ids: attachmentIds }),
+        const data = await uploadFile(file, percent => { fill.style.width = `${percent}%`; });
+        chip.remove();
+        state.attachments.push({
+          name: data.filename,
+          size: data.size,
+          extension: data.extension,
+          readable: data.readable !== false,
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Request failed');
-        const departments = Array.isArray(data.departments) ? data.departments.join(', ') : '';
-        const meta = `<div class="result-meta"><span>${escapeHtml(departments || 'manager')}</span><span>${data.knowledge_used || 0} knowledge sources used</span></div>`;
-        if (data.status === 'error') {
-          result.innerHTML = `${meta}${renderError(data.error)}${renderTrace(data.trace)}`;
-        } else {
-          result.innerHTML = `${meta}<div class="result-content">${escapeHtml(data.output)}</div>${renderArtifacts(data.artifacts)}${renderBacktests(data.backtests)}${renderTrace(data.trace)}`;
-        }
-        const history = historyItems().filter(item => item.prompt !== prompt.value.trim());
-        history.unshift({ prompt: prompt.value.trim(), time: 'Just now' });
-        localStorage.setItem(historyKey, JSON.stringify(history.slice(0, 8)));
+        renderAttachments();
+        if (data.readable === false) toast(`${data.filename} attached, but this file type cannot be read by the AI team.`, 'error');
+        else toast(`${data.filename} attached`);
       } catch (error) {
-        result.innerHTML = renderError({ title: 'Unable to reach the AI team.', message: error.message, hint: 'Check that the backend is running and retry.' });
-      } finally {
-        generateButton.disabled = false;
-        generateButton.textContent = 'Generate with team';
+        chip.classList.remove('uploading');
+        chip.classList.add('failed');
+        chip.innerHTML = `<span class="name">${escapeHtml(file.name)}</span><span class="size">failed</span>`;
+        toast(`Could not upload ${file.name}: ${error.message}`, 'error');
       }
     };
-    generateButton.addEventListener('click', generate);
-    document.getElementById('clearButton')?.addEventListener('click', () => { prompt.value = ''; result.className = 'result empty'; result.innerHTML = '<div>Your team\'s response will appear here.</div>'; });
-    document.getElementById('attachButton')?.addEventListener('click', () => fileInput.click());
-    fileInput?.addEventListener('change', async event => { for (const file of event.target.files) { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiBase}/knowledge/upload`, { method:'POST', body }); if (response.ok) { const data = await response.json(); attachmentIds.push(data.filename); toast(`${file.name} attached to your next request`); } else { toast(`Could not upload ${file.name}`); } } });
-    document.getElementById('addFileLink')?.addEventListener('click', () => fileInput.click());
-    document.getElementById('clearHistory')?.addEventListener('click', () => { localStorage.removeItem(historyKey); document.getElementById('historyList').innerHTML = '<div class="empty-files">No conversations yet.</div>'; toast('Conversation history cleared'); });
+
+    const uploadFiles = async fileList => {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+      for (const file of files) await uploadOne(file);
+    };
+
+    const loadMessages = async () => {
+      if (!conversationId) {
+        messagesEl.innerHTML = '<div class="empty-state">Start a new conversation below. Your AI team is ready.</div>';
+        return;
+      }
+      try {
+        const data = await api(`/conversations/${conversationId}`);
+        const title = data.messages && data.messages.length ? data.messages[0].content.slice(0, 60) : 'Conversation';
+        document.getElementById('chatTitle').textContent = title;
+        messagesEl.innerHTML = data.messages.length
+          ? data.messages.map(renderMessage).join('')
+          : '<div class="empty-state">No messages yet. Ask your team something.</div>';
+        scrollBottom();
+        // A reload during a running job would otherwise lose the result: the
+        // job keeps running in the backend, so resume watching it here.
+        await resumeActiveJob();
+      } catch (error) {
+        messagesEl.innerHTML = `<div class="empty-state">Could not load this conversation: ${escapeHtml(error.message)}</div>`;
+      }
+    };
+
+    const resumeActiveJob = async () => {
+      try {
+        const jobs = await api('/queue');
+        const active = jobs.find(job => (job.status === 'queued' || job.status === 'running')
+          && job.payload && job.payload.conversation_id === conversationId);
+        if (active && !pendingJob) {
+          pendingJob = active.id;
+          sendButton.disabled = true;
+          await pollJob(active.id);
+          sendButton.disabled = false;
+        }
+      } catch (error) {
+        // The queue may be briefly unreachable; the badge poll will retry.
+      }
+    };
+
+    // Ask the backend to stop a running job. The job stops at its next
+    // checkpoint, so the poll loop keeps running until the status changes.
+    const cancelJob = async jobId => {
+      try {
+        await post(`/queue/${jobId}/cancel`, {});
+        toast('Cancelling the request...');
+      } catch (error) {
+        toast(`Could not cancel the request: ${error.message}`, 'error');
+      }
+    };
+
+    const pollJob = async jobId => {
+      // The backend watchdog fails a job after `MAX_JOB_RUNTIME_SECONDS`, so
+      // poll a little longer than that. This way the backend reports the real
+      // outcome instead of the UI giving up on a job that is still healthy.
+      const maxRuntimeMs = ((state.queueMaxRuntime || 600) + 120) * 1000;
+      const MAX_POLL_MS = Math.max(5 * 60 * 1000, maxRuntimeMs);
+      const POLL_INTERVAL_MS = 1200;
+      const startedAt = Date.now();
+      const token = pageToken;
+      let consecutiveErrors = 0;
+      let lastPercent = 0;
+
+      const removeProgress = () => {
+        if (progressEl) { progressEl.remove(); progressEl = null; }
+        chatStatus.textContent = 'Ready';
+      };
+
+      const showProgress = job => {
+        const info = job.progress || {};
+        // The backend projects the finish time from the job's own measured pace,
+        // so the numbers below come straight from it. The elapsed-time ratio is
+        // only a floor for the bar, so a stalled report cannot make it jump back.
+        const elapsed = (Date.now() - startedAt) / 1000;
+        const estimate = Number(info.estimate_seconds) || Number(state.defaultEstimate) || 270;
+        const percent = Math.max(lastPercent, Number(info.percent) || 0, Math.min(95, (elapsed / estimate) * 100));
+        lastPercent = percent;
+        const html = progressCardHtml({
+          label: info.label || 'The manager is working with your team',
+          detail: info.detail || '',
+          percent,
+          eta: etaText({ ...info, percent }),
+          stage: info.stage || 'triage',
+          cancellable: true,
+          activity: info.activity,
+        });
+        if (!progressEl) {
+          // A stable wrapper keeps the card in place while its contents are
+          // replaced on every poll, so the message list does not jump around.
+          progressEl = document.createElement('div');
+          progressEl.className = 'progress-slot';
+          messagesEl.appendChild(progressEl);
+        }
+        progressEl.innerHTML = html;
+        // The card is rebuilt on every poll, so the button is re-bound here.
+        const cancelButton = progressEl.querySelector('[data-cancel-job]');
+        if (cancelButton) cancelButton.addEventListener('click', () => cancelJob(jobId));
+        // Keep the newest activity line in view as the feed grows.
+        const feed = progressEl.querySelector('[data-activity]');
+        if (feed) feed.scrollTop = feed.scrollHeight;
+        chatStatus.textContent = `${Math.round(percent)}%`;
+        scrollBottom();
+      };
+
+      const poll = async () => {
+        try {
+          const job = await api(`/queue/${jobId}`);
+          if (!job || typeof job.status !== 'string') {
+            // An unexpected response shape is treated as a transient failure
+            // rather than a finished job, so the loop does not silently stop.
+            throw new Error('Unexpected job status response.');
+          }
+          consecutiveErrors = 0;
+          if (job.status === 'running' || job.status === 'queued') {
+            showProgress(job);
+            return true;
+          }
+          removeProgress();
+          if (job.status === 'done') {
+            const result = job.result || {};
+            const isError = result.status === 'error';
+            // On failure show the human-readable title, keeping the technical
+            // detail in the error block instead of as the main message.
+            const output = isError
+              ? (result.message || 'The request failed.')
+              : (result.output || result.message || '');
+            const meta = {
+              status: result.status,
+              departments: result.departments,
+              artifacts: result.artifacts,
+              error: result.error,
+              knowledge_used: result.knowledge_used,
+            };
+            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: output, meta }) }));
+            scrollBottom();
+            refreshQueueBadge();
+          } else if (job.status === 'failed') {
+            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'The request failed.', meta: { status: 'error', error: { message: job.error || 'Unknown error' } } }) }));
+            scrollBottom();
+          } else if (job.status === 'cancelled') {
+            // Cancelling is a deliberate user action, so it is reported plainly
+            // rather than as an error the user has to interpret.
+            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'Request cancelled. Nothing was delivered.', meta: { status: 'cancelled' } }) }));
+            scrollBottom();
+            refreshQueueBadge();
+          }
+          return false;
+        } catch (error) {
+          consecutiveErrors += 1;
+          // Tolerate a few transient polling failures (backend restart, brief
+          // network drop) before giving up, so a blip does not look like a hang.
+          if (consecutiveErrors < 5) return true;
+          removeProgress();
+          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'Lost contact with the backend while waiting for a result.', meta: { status: 'error', error: { message: error.message || 'The backend is unreachable.' } } }) }));
+          scrollBottom();
+          return false;
+        }
+      };
+
+      while (await poll()) {
+        // Leaving the chat page detaches these nodes. The job keeps running in
+        // the backend and is picked up again by `resumeActiveJob` on return.
+        if (!isCurrentPage(token) || !document.body.contains(messagesEl)) {
+          removeProgress();
+          break;
+        }
+        if (Date.now() - startedAt > MAX_POLL_MS) {
+          removeProgress();
+          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'This request is taking longer than expected.', meta: { status: 'error', error: { message: 'The job is still running. Check the Queue page for its status.' } } }) }));
+          scrollBottom();
+          break;
+        }
+        await new Promise(resolve => window.setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+    };
+    const send = async () => {
+      const text = input.value.trim();
+      if (!text || sendButton.disabled) return;
+      sendButton.disabled = true;
+      input.value = '';
+      messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg user', innerHTML: renderMessage({ role: 'user', content: text }) }));
+      scrollBottom();
+      try {
+        let targetId = conversationId;
+        if (!targetId) {
+          const created = await post('/conversations', { profile_id: state.profileId, title: text.slice(0, 60) });
+          targetId = created.id;
+          state.conversationId = targetId;
+          localStorage.setItem('voltaik-conversation', targetId);
+          document.getElementById('chatTitle').textContent = text.slice(0, 60);
+          loadChatHistory();
+        }
+        const sent = await post(`/conversations/${targetId}/messages`, {
+          content: text,
+          profile_id: state.profileId,
+          attachment_ids: state.attachments.map(file => file.name),
+        });
+        state.attachments = [];
+        renderAttachments();
+        pendingJob = sent.job.id;
+        await pollJob(pendingJob);
+      } catch (error) {
+        messagesEl.insertAdjacentHTML('beforeend', renderMessage({ role: 'assistant', content: 'Could not send the message.', meta: { status: 'error', error: { message: error.message } } }));
+        scrollBottom();
+      } finally {
+        sendButton.disabled = false;
+        input.focus();
+      }
+    };
+
+    sendButton.addEventListener('click', send);
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        send();
+      }
+    });
+    document.getElementById('newChatButton').addEventListener('click', () => {
+      state.conversationId = null;
+      localStorage.removeItem('voltaik-conversation');
+      renderChat();
+    });
+    document.getElementById('clearChatButton').addEventListener('click', () => {
+      messagesEl.innerHTML = '<div class="empty-state">View cleared. Your conversation is still saved in History.</div>';
+    });
+    document.getElementById('historyLink').addEventListener('click', () => navigate('history'));
+    attachTool.addEventListener('click', () => fileInput.click());
+
+    // Drag and drop onto the chat panel. `dragenter`/`dragleave` fire for child
+    // elements too, so a counter tracks whether the pointer is still inside.
+    let dragDepth = 0;
+    const showDropHint = () => {
+      if (chatPanel.querySelector('.drop-hint')) return;
+      chatPanel.classList.add('dragging');
+      chatPanel.insertAdjacentHTML('beforeend', '<div class="drop-hint"><span>Drop files to attach them</span></div>');
+    };
+    const hideDropHint = () => {
+      chatPanel.classList.remove('dragging');
+      const hint = chatPanel.querySelector('.drop-hint');
+      if (hint) hint.remove();
+    };
+    chatPanel.addEventListener('dragenter', event => {
+      if (!event.dataTransfer || !Array.from(event.dataTransfer.types || []).includes('Files')) return;
+      event.preventDefault();
+      dragDepth += 1;
+      showDropHint();
+    });
+    chatPanel.addEventListener('dragover', event => {
+      if (!event.dataTransfer || !Array.from(event.dataTransfer.types || []).includes('Files')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+    chatPanel.addEventListener('dragleave', () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) hideDropHint();
+    });
+    chatPanel.addEventListener('drop', async event => {
+      event.preventDefault();
+      dragDepth = 0;
+      hideDropHint();
+      await uploadFiles(event.dataTransfer && event.dataTransfer.files);
+    });
+    renderAttachments();
+    loadMessages();
   }
 
-  function navigate(route) { window.location.hash = route; }
-  function route() { const routeName = window.location.hash.replace('#','') || 'studio'; setActive(routeName); if (routeName === 'history') renderHistory(); else if (routeName === 'knowledge') renderKnowledge(); else if (routeName === 'team') renderTeam(); else if (routeName === 'settings') renderSettings(); else renderStudio(); }
+  async function loadChatHistory() {
+    const listEl = document.getElementById('chatHistoryList');
+    if (!listEl) return;
+    try {
+      const conversations = await api(`/conversations?profile_id=${encodeURIComponent(state.profileId)}`);
+      listEl.innerHTML = conversations.length
+        ? conversations.slice(0, 12).map(conversation => `
+          <div class="history-item ${conversation.id === state.conversationId ? 'current' : ''}" data-open-chat="${conversation.id}">
+            <strong>${escapeHtml(conversation.title)}</strong><small>${formatTime(conversation.updated_at)}</small>
+          </div>`).join('')
+        : '<div class="empty-state">No conversations yet.</div>';
+      document.querySelectorAll('[data-open-chat]').forEach(item => item.addEventListener('click', () => {
+        state.conversationId = item.dataset.openChat;
+        localStorage.setItem('voltaik-conversation', state.conversationId);
+        renderChat();
+      }));
+    } catch (error) {
+      listEl.innerHTML = '<div class="empty-state">Could not load conversations.</div>';
+    }
+  }
 
-  document.querySelectorAll('.nav a').forEach(link => link.addEventListener('click', event => { event.preventDefault(); navigate(link.getAttribute('href').slice(1)); }));
-  document.querySelector('.workspace')?.addEventListener('click', () => toast('Workspace switcher is ready for multiple workspaces.'));
-  document.querySelectorAll('.top-actions button').forEach(button => button.addEventListener('click', () => toast(button.title === 'Help' ? 'Ask your AI team anything from Studio.' : 'You are all caught up.')));
+  // ------------------------------------------------------------------ queue
+
+  async function refreshQueueBadge() {
+    try {
+      const jobs = await api('/queue');
+      const active = jobs.filter(job => job.status === 'queued' || job.status === 'running').length;
+      const badge = document.getElementById('queueBadge');
+      if (badge) {
+        badge.hidden = active === 0;
+        badge.textContent = String(active);
+      }
+    } catch (error) { /* backend offline */ }
+  }
+
+  function renderQueue() {
+    content.innerHTML = renderPage(
+      'Job queue',
+      'Background work',
+      'Long-running requests are processed in the background. Watch their status here and in the sidebar badge.',
+      `<button class="secondary-action" id="refreshQueueButton">Refresh</button>`,
+      `<div class="panel data-panel"><div class="data-toolbar"><h2>Recent jobs</h2><span class="eyebrow" id="queueCount">Loading...</span></div><div class="queue-grid" id="queueGrid"><div class="empty-state">Loading jobs...</div></div></div>`
+    );
+    setActive('queue');
+    let timer = null;
+    // The page auto-refreshes while a job runs. Replacing the grid's HTML on
+    // every tick would make the Cancel buttons unstable to click (the node is
+    // swapped out mid-click), so the grid is only rebuilt when something the
+    // user can see actually changed.
+    let lastSignature = null;
+    // The most recent job rows, so "View output" can show a result without
+    // refetching.
+    const jobCache = new Map();
+
+    const jobCard = job => {
+      const kind = job.kind === 'generate' ? 'Generation' : job.kind === 'build-knowledge' ? 'Knowledge build' : job.kind;
+      const prompt = (job.payload && job.payload.prompt) || (job.payload && job.payload.profile_id) || '';
+      const statusClass = job.status === 'running' ? 'running' : job.status === 'done' ? 'done' : job.status === 'failed' ? 'failed' : job.status === 'cancelled' ? 'cancelled' : 'queued';
+      const spinner = job.status === 'running' ? '<i></i>' : '';
+      const info = job.progress || {};
+      const active = job.status === 'running' || job.status === 'queued';
+      const settled = job.status === 'done' || job.status === 'failed' || job.status === 'cancelled';
+      let progressBlock = '';
+      if (active) {
+        const percent = job.status === 'queued' ? 0 : Math.max(2, Number(info.percent) || 0);
+        const label = job.status === 'queued' ? 'Waiting for a free worker' : (info.label || 'Working');
+        progressBlock = `<div class="q-progress">
+          <div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div>
+          <div class="progress-meta"><span>${escapeHtml(label)}</span><span class="q-eta">${escapeHtml(job.status === 'queued' ? '' : etaText(info))}</span></div>
+          ${activityFeedHtml(info.activity)}
+        </div>`;
+      }
+      const duration = job.started_at && job.completed_at
+        ? formatDuration((new Date(job.completed_at.replace(' ', 'T')) - new Date(job.started_at.replace(' ', 'T'))) / 1000)
+        : '';
+      const cancelling = active && job.cancel_requested;
+      const cancelButton = active
+        ? `<button class="cancel-job" data-cancel-job="${escapeHtml(job.id)}" ${cancelling ? 'disabled' : ''}>${cancelling ? 'Cancelling...' : 'Cancel'}</button>`
+        : '';
+      // Every settled job can be inspected: a finished job shows its deliverable,
+      // a failed one shows why, and a cancelled one confirms nothing was saved.
+      const outputButton = settled
+        ? `<button class="mini-action" data-view-job="${escapeHtml(job.id)}">View output</button>`
+        : '';
+      return `<div class="queue-card" data-job-card="${escapeHtml(job.id)}">
+        <div class="q-top"><h3>${escapeHtml(kind)}</h3><span class="status-pill ${statusClass}">${spinner}${escapeHtml(job.status)}</span></div>
+        <p>${escapeHtml(prompt)}</p>
+        ${progressBlock}
+        <div class="q-foot"><span>${formatTime(job.created_at)}</span><span>${escapeHtml(duration)}</span></div>
+        ${(cancelButton || outputButton) ? `<div class="q-actions">${outputButton}${cancelButton}</div>` : ''}
+        ${job.error ? `<div class="q-error">${escapeHtml(job.error)}</div>` : ''}
+      </div>`;
+    };
+
+    // Build the human-readable body of a job's stored result. A finished job
+    // carries the deliverable plus a small audit trail; the others explain
+    // themselves plainly instead of showing a raw blob.
+    const jobOutput = job => {
+      const result = job.result && typeof job.result === 'object' ? job.result : {};
+      if (job.status === 'cancelled') {
+        return { title: 'Job cancelled', body: job.error || 'The job was cancelled before it produced a result.' };
+      }
+      if (job.status === 'failed') {
+        return { title: 'Job failed', body: job.error || 'The job failed without a message.' };
+      }
+      const isError = result.status === 'error';
+      const main = result.output || result.message || job.error || 'This job produced no output.';
+      const lines = [main];
+      if (result.departments && result.departments.length) lines.push('', `Departments: ${result.departments.join(', ')}`);
+      if (result.knowledge_used) lines.push(`Knowledge sources used: ${result.knowledge_used}`);
+      if (Array.isArray(result.artifacts) && result.artifacts.length) {
+        lines.push('', 'Artifacts:');
+        result.artifacts.forEach(file => lines.push(`- ${file.filename}`));
+      }
+      if (result.backtests && result.backtests.length) {
+        lines.push('', 'Backtests:');
+        result.backtests.forEach(test => lines.push(`- ${test.specialist || 'script'}: ${test.conversion_rate != null ? Math.round(test.conversion_rate * 100) + '%' : 'n/a'} (${test.passed ? 'passed' : 'failed'})`));
+      }
+      if (result.error && result.error.message && result.error.message !== main) lines.push('', result.error.message);
+      return { title: isError ? 'Job error' : 'Job output', body: lines.join('\n') };
+    };
+
+    const load = async () => {
+      const countEl = document.getElementById('queueCount');
+      const gridEl = document.getElementById('queueGrid');
+      if (!countEl || !gridEl) return;
+      try {
+        const jobs = await api('/queue');
+        countEl.textContent = `${jobs.length} jobs`;
+        // Only rebuild the grid when something visible changed. Replacing the
+        // HTML on every tick would swap the Cancel buttons out from under the
+        // pointer, making them unreliable to click.
+        const signature = JSON.stringify(jobs.map(job => [
+          job.id, job.status, job.cancel_requested,
+          (job.progress || {}).percent, (job.progress || {}).label,
+          (job.progress || {}).eta_seconds, (job.progress || {}).estimate_seconds,
+          // The activity feed is part of what the user sees, so a new line must
+          // trigger a rebuild. Only the count and the newest preview are needed:
+          // the count changes when a line is added, and the preview changes while
+          // a generation is still streaming into the last line.
+          ((job.progress || {}).activity || []).length,
+          (((job.progress || {}).activity || []).slice(-1)[0] || {}).preview,
+        ]));
+        if (signature !== lastSignature) {
+          lastSignature = signature;
+          gridEl.innerHTML = jobs.length
+            ? jobs.map(jobCard).join('')
+            : '<div class="empty-state">No jobs yet. Send a message in Chat to start one.</div>';
+          // Cache the job results so View output does not need another request.
+          jobs.forEach(job => jobCache.set(job.id, job));
+          gridEl.querySelectorAll('[data-cancel-job]').forEach(button => button.addEventListener('click', async () => {
+            button.disabled = true;
+            button.textContent = 'Cancelling...';
+            try {
+              await post(`/queue/${button.dataset.cancelJob}/cancel`, {});
+              toast('Cancelling the job...');
+            } catch (error) {
+              toast(`Could not cancel the job: ${error.message}`, 'error');
+            }
+            load();
+          }));
+          gridEl.querySelectorAll('[data-view-job]').forEach(button => button.addEventListener('click', () => {
+            const job = jobCache.get(button.dataset.viewJob);
+            if (!job) return;
+            const output = jobOutput(job);
+            showModal(output.title, output.body);
+          }));
+        }
+        // Keep the page live while something is running, so the progress bars
+        // move without the user having to press Refresh.
+        const active = jobs.some(job => job.status === 'running' || job.status === 'queued');
+        window.clearTimeout(timer);
+        if (active) timer = trackTimer(window.setTimeout(load, 2000));
+      } catch (error) {
+        gridEl.innerHTML = '<div class="empty-state">Could not reach the queue service.</div>';
+      }
+    };
+    document.getElementById('refreshQueueButton').addEventListener('click', load);
+    load();
+  }
+
+  // The backend owns the timing constants, so the UI asks for them rather than
+  // hard-coding numbers that could drift out of sync. Failure is harmless:
+  // callers fall back to a sane default.
+  async function loadQueueConfig() {
+    try {
+      const config = await api('/queue/config');
+      state.defaultEstimate = Number(config.default_estimate_seconds) || state.defaultEstimate;
+      state.queueMaxRuntime = Number(config.max_runtime_seconds) || state.queueMaxRuntime;
+    } catch (error) {
+      // Keep whatever was last known; the progress card degrades gracefully.
+    }
+  }
+
+  // ---------------------------------------------------------------- history
+
+  function renderHistory() {
+    content.innerHTML = renderPage(
+      'Conversation history',
+      'Workspace memory',
+      'Every conversation with your AI team, ready to pick up where you left off.',
+      `<button class="secondary-action" data-route="chat">+ New chat</button>`,
+      `<div class="panel data-panel"><div class="data-toolbar"><h2>Conversations</h2><input class="search-input" id="historySearch" placeholder="Search conversations" /></div><div id="historyRows"><div class="empty-state">Loading...</div></div></div>`
+    );
+    setActive('history');
+    const load = async filter => {
+      try {
+        const conversations = await api(`/conversations?profile_id=${encodeURIComponent(state.profileId)}`);
+        const filtered = conversations.filter(conversation => !filter || conversation.title.toLowerCase().includes(filter.toLowerCase()));
+        document.getElementById('historyRows').innerHTML = filtered.length
+          ? filtered.map(conversation => `
+            <div class="data-row">
+              <div><strong>${escapeHtml(conversation.title)}</strong><small>${formatTime(conversation.updated_at)}</small></div>
+              <div class="row-actions">
+                <button class="mini-action" data-open-conv="${conversation.id}">Open</button>
+                <button class="mini-action danger" data-delete-conv="${conversation.id}">Delete</button>
+              </div>
+            </div>`).join('')
+          : '<div class="empty-state">No conversations match that search.</div>';
+        document.querySelectorAll('[data-open-conv]').forEach(button => button.addEventListener('click', () => {
+          state.conversationId = button.dataset.openConv;
+          localStorage.setItem('voltaik-conversation', state.conversationId);
+          navigate('chat');
+        }));
+        document.querySelectorAll('[data-delete-conv]').forEach(button => button.addEventListener('click', async () => {
+          await del(`/conversations/${button.dataset.deleteConv}`);
+          if (state.conversationId === button.dataset.deleteConv) {
+            state.conversationId = null;
+            localStorage.removeItem('voltaik-conversation');
+          }
+          toast('Conversation deleted');
+          load(document.getElementById('historySearch').value);
+        }));
+      } catch (error) {
+        document.getElementById('historyRows').innerHTML = '<div class="empty-state">Could not load conversations.</div>';
+      }
+    };
+    document.getElementById('historySearch').addEventListener('input', event => load(event.target.value));
+    document.querySelectorAll('[data-route]').forEach(button => button.addEventListener('click', () => navigate(button.dataset.route)));
+    load('');
+  }
+
+  // ----------------------------------------------------------------- memory
+
+  function renderMemory() {
+    content.innerHTML = renderPage(
+      'Business memory',
+      'Persistent context',
+      'Facts you want every agent run to remember. Memory is injected into every request so the whole team stays grounded.',
+      `<button class="secondary-action" id="memoryRefresh">Refresh</button>`,
+      `<div class="panel data-panel">
+        <div class="data-toolbar"><h2>Add a memory</h2></div>
+        <div class="memory-add">
+          <input id="memoryInput" placeholder="e.g. We never promise guaranteed savings in any ad." />
+          <select id="memoryCategory"><option value="general">General</option><option value="compliance">Compliance</option><option value="brand">Brand</option><option value="customer">Customer</option><option value="process">Process</option></select>
+          <button class="primary-action" id="memoryAddButton">Add memory</button>
+        </div>
+        <div class="memory-list" id="memoryList"><div class="empty-state">Loading...</div></div>
+      </div>`
+    );
+    setActive('memory');
+    const load = async () => {
+      try {
+        const items = await api(`/memory?profile_id=${encodeURIComponent(state.profileId)}`);
+        document.getElementById('memoryList').innerHTML = items.length
+          ? items.map(item => `
+            <div class="memory-item">
+              <div class="m-body"><strong>${escapeHtml(item.content)}</strong><small>${escapeHtml(item.category)} · ${formatTime(item.created_at)}</small></div>
+              <button class="mini-action danger" data-delete-memory="${item.id}">Delete</button>
+            </div>`).join('')
+          : '<div class="empty-state">No memories yet. Add facts your team should always remember.</div>';
+        document.querySelectorAll('[data-delete-memory]').forEach(button => button.addEventListener('click', async () => {
+          await del(`/memory/${button.dataset.deleteMemory}`);
+          toast('Memory removed');
+          load();
+        }));
+      } catch (error) {
+        document.getElementById('memoryList').innerHTML = '<div class="empty-state">Could not load memory.</div>';
+      }
+    };
+    document.getElementById('memoryAddButton').addEventListener('click', async () => {
+      const input = document.getElementById('memoryInput');
+      const text = input.value.trim();
+      if (!text) return toast('Write a memory first.');
+      try {
+        await post('/memory', { profile_id: state.profileId, content: text, category: document.getElementById('memoryCategory').value });
+        input.value = '';
+        toast('Memory saved — the team will remember this.');
+        load();
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+    document.getElementById('memoryRefresh').addEventListener('click', load);
+    load();
+  }
+
+  // -------------------------------------------------------------- knowledge
+
+  function renderKnowledge() {
+    content.innerHTML = renderPage(
+      'Knowledge library',
+      'Business context',
+      'The documents your AI team grounds every deliverable in. Upload files, create documents, or build a base from a profile.',
+      `<button class="secondary-action" id="reindexButton">Re-index library</button><button class="primary-action" id="knowledgeUploadButton">+ Upload file</button>`,
+      `<div class="panel data-panel"><div class="data-toolbar"><h2>Library</h2><span class="eyebrow" id="knowledgeCount">Loading...</span></div><div id="knowledgeRows"><div class="empty-state">Loading your knowledge library...</div></div></div>
+       <div class="panel data-panel"><div class="panel-title"><h2>Create a file</h2><span class="eyebrow">TXT · PDF · DOCX</span></div>
+       <div class="create-form"><label>Filename<input class="setting-input" id="createFilename" value="campaign-brief.txt" /></label><label>Content<textarea id="createContent" placeholder="Write the document content here..."></textarea></label><button class="primary-action" id="createFileButton">Create file</button></div></div>`
+    );
+    setActive('knowledge');
+    const fileInput = bindFilePicker(async (event, picker) => {
+      const files = Array.from(event.target.files || []);
+      picker.value = '';
+      for (const file of files) {
+        try {
+          const data = await uploadFile(file);
+          toast(`${data.filename} uploaded`);
+        } catch (error) {
+          toast(`Could not upload ${file.name}: ${error.message}`, 'error');
+        }
+      }
+      renderRows();
+    });
+    const renderRows = async () => {
+      const countEl = document.getElementById('knowledgeCount');
+      const rowsEl = document.getElementById('knowledgeRows');
+      // An upload can finish after the user navigated away, which detaches
+      // these nodes. Rendering into them would throw.
+      if (!countEl || !rowsEl) return;
+      try {
+        const [documents, uploads] = await Promise.all([api('/knowledge'), api('/knowledge/uploads')]);
+        const rows = [
+          ...uploads.map(file => ({ name: file.filename, category: 'Uploaded context', meta: formatSize(file.size), extension: file.extension || '.file', uploaded: true, readable: file.readable !== false })),
+          ...documents.map(file => ({ name: file.document, category: file.category, meta: 'Indexed knowledge', extension: '.md', uploaded: false, readable: true })),
+        ];
+        countEl.textContent = `${rows.length} sources`;
+        rowsEl.innerHTML = rows.length
+          ? `<div class="file-grid">${rows.map((file, index) => {
+              const type = file.extension === '.pdf' ? 'pdf' : file.extension === '.docx' ? 'docx' : file.extension === '.txt' ? 'txt' : 'other';
+              return `<article class="file-card"><div class="file-card-top"><div class="file-type ${type}">${type === 'other' ? 'FILE' : type.toUpperCase()}</div><span class="eyebrow">${file.uploaded ? 'Uploaded' : 'Indexed'}</span></div><h3 title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</h3><small>${escapeHtml(file.category)} · ${file.meta}</small>${file.readable ? '' : '<small style="color:var(--red)">Not readable by the AI team</small>'}<div class="file-card-actions"><button class="mini-action" data-preview-file="${index}">Preview</button>${file.uploaded ? `<button class="mini-action danger" data-delete-file="${index}">Remove</button>` : ''}</div></article>`;
+            }).join('')}</div>`
+          : '<div class="empty-state">No knowledge files found.</div>';
+        document.querySelectorAll('[data-preview-file]').forEach(button => button.addEventListener('click', async () => {
+          const file = rows[Number(button.dataset.previewFile)];
+          if (!file.uploaded) return toast('This indexed source is available to the AI team.');
+          try {
+            const data = await api(`/knowledge/uploads/${encodeURIComponent(file.name)}/preview`);
+            showModal(data.filename, data.preview || 'This file has no readable text preview.');
+          } catch (error) {
+            toast(error.message, 'error');
+          }
+        }));
+        document.querySelectorAll('[data-delete-file]').forEach(button => button.addEventListener('click', async () => {
+          const file = rows[Number(button.dataset.deleteFile)];
+          await del(`/knowledge/uploads/${encodeURIComponent(file.name)}`);
+          toast(`${file.name} removed`);
+          renderRows();
+        }));
+      } catch (error) {
+        rowsEl.innerHTML = '<div class="empty-state">Could not reach the knowledge service. Check that the backend is running.</div>';
+      }
+    };
+    document.getElementById('knowledgeUploadButton').addEventListener('click', () => fileInput.click());
+    document.getElementById('reindexButton').addEventListener('click', async event => {
+      event.currentTarget.textContent = 'Re-indexing...';
+      try {
+        const data = await post('/knowledge/reindex', {});
+        toast(`Indexed ${data.documents_indexed} documents`);
+      } catch (error) {
+        toast('Re-index failed');
+      }
+      event.currentTarget.textContent = 'Re-index library';
+    });
+    document.getElementById('createFileButton').addEventListener('click', async event => {
+      const filename = document.getElementById('createFilename').value.trim();
+      const contentText = document.getElementById('createContent').value;
+      event.currentTarget.textContent = 'Creating...';
+      try {
+        const data = await post('/knowledge/create', { filename, content: contentText });
+        toast(`${data.filename} created`);
+        renderRows();
+      } catch (error) {
+        toast(error.message);
+      }
+      event.currentTarget.textContent = 'Create file';
+    });
+    renderRows();
+  }
+
+  // --------------------------------------------------------------- profiles
+
+  const PROFILE_FIELDS = [
+    ['name', 'Business name', 'text', 'The name of your business.'],
+    ['business_type', 'Business type', 'text', 'e.g. Solar installer, Roofing company, Med spa.'],
+    ['industry', 'Industry', 'text', 'e.g. Residential solar, Home services, Healthcare.'],
+    ['description', 'What does your business do?', 'textarea', 'A short description of your products and services.'],
+    ['target_customer', 'Who is your ideal customer?', 'textarea', 'Demographics, pain points, objections, buying triggers.'],
+    ['services', 'Services', 'textarea', 'What you sell, one per line.'],
+    ['offers', 'Offers & lead magnets', 'textarea', 'Free consultations, quotes, audits, discounts.'],
+    ['pricing', 'Pricing & financing', 'textarea', 'How you price, financing options, payment terms.'],
+    ['brand_voice', 'Brand voice', 'textarea', 'How should the AI sound? e.g. Educational, direct, friendly, no hype.'],
+    ['marketing_channels', 'Marketing channels', 'textarea', 'Meta ads, Google, SMS, email, cold calls, referrals.'],
+    ['sales_process', 'Sales process', 'textarea', 'How leads become customers: setter → closer → install.'],
+    ['automation_needs', 'Automation needs', 'textarea', 'Nurture sequences, reminders, follow-ups you want.'],
+    ['geographic_focus', 'Geographic focus', 'text', 'States, cities, or service areas.'],
+    ['compliance_notes', 'Compliance rules', 'textarea', 'Claims to avoid, guarantees you cannot make, legal notes.'],
+  ];
+
+  function profileFormHtml(profile) {
+    const value = field => escapeHtml((profile || {})[field] || '');
+    return `<div class="profile-form">
+      ${PROFILE_FIELDS.map(([field, label, type, hint]) => `
+        <div class="form-field ${type === 'textarea' ? 'full' : ''}">
+          <label for="pf-${field}">${escapeHtml(label)}</label>
+          ${type === 'textarea'
+            ? `<textarea id="pf-${field}" placeholder="${escapeHtml(hint)}">${value(field)}</textarea>`
+            : `<input id="pf-${field}" type="text" placeholder="${escapeHtml(hint)}" value="${value(field)}" />`}
+          <small>${escapeHtml(hint)}</small>
+        </div>`).join('')}
+    </div>`;
+  }
+
+  function collectProfileForm() {
+    const data = {};
+    PROFILE_FIELDS.forEach(([field]) => {
+      const element = document.getElementById(`pf-${field}`);
+      data[field] = element ? element.value.trim() : '';
+    });
+    return data;
+  }
+
+  function renderProfiles() {
+    content.innerHTML = renderPage(
+      'Business profiles',
+      'Your businesses',
+      'Each profile is a complete picture of one business. Fill in the form and let the AI convert it into a knowledge base your team will use.',
+      `<button class="primary-action" id="newProfileButton">+ New profile</button>`,
+      `<div class="panel data-panel"><div class="data-toolbar"><h2>Profiles</h2><span class="eyebrow" id="profileCount">Loading...</span></div><div class="profile-grid" id="profileGrid"><div class="empty-state">Loading...</div></div></div>
+       <div class="panel data-panel" id="profileEditorPanel" hidden>
+         <div class="panel-title"><h2 id="profileEditorTitle">New profile</h2><span class="eyebrow">Fill in what you know — the AI fills the gaps</span></div>
+         ${profileFormHtml(null)}
+         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+           <button class="primary-action" id="saveProfileButton">Save profile</button>
+           <button class="secondary-action" id="buildKnowledgeButton">Build knowledge base</button>
+           <button class="secondary-action" id="cancelProfileButton">Cancel</button>
+         </div>
+         <div class="build-result" id="buildResult" hidden></div>
+       </div>`
+    );
+    setActive('profiles');
+    let editingId = null;
+
+    const load = async () => {
+      try {
+        const profiles = await api('/profiles');
+        document.getElementById('profileCount').textContent = `${profiles.length} profiles`;
+        document.getElementById('profileGrid').innerHTML = profiles.length
+          ? profiles.map(profile => `
+            <div class="profile-card">
+              <div class="p-top"><div class="avatar">${escapeHtml(initials(profile.name))}</div><div><h3>${escapeHtml(profile.name)}</h3><small>${escapeHtml(profile.business_type || 'Business')}</small></div></div>
+              <p>${escapeHtml(profile.description || 'No description yet.')}</p>
+              <div class="p-actions">
+                <button class="mini-action" data-edit-profile="${profile.id}">Edit</button>
+                <button class="mini-action" data-use-profile="${profile.id}">Use</button>
+                <button class="mini-action" data-build-profile="${profile.id}">Build knowledge</button>
+                <button class="mini-action danger" data-delete-profile="${profile.id}">Delete</button>
+              </div>
+            </div>`).join('')
+          : '<div class="empty-state">No profiles yet. Create one to get started.</div>';
+        document.querySelectorAll('[data-edit-profile]').forEach(button => button.addEventListener('click', () => openEditor(button.dataset.editProfile)));
+        document.querySelectorAll('[data-use-profile]').forEach(button => button.addEventListener('click', () => switchProfile(button.dataset.useProfile)));
+        document.querySelectorAll('[data-build-profile]').forEach(button => button.addEventListener('click', () => buildKnowledge(button.dataset.buildProfile)));
+        document.querySelectorAll('[data-delete-profile]').forEach(button => button.addEventListener('click', async () => {
+          await del(`/profiles/${button.dataset.deleteProfile}`);
+          toast('Profile deleted');
+          load();
+        }));
+      } catch (error) {
+        document.getElementById('profileGrid').innerHTML = '<div class="empty-state">Could not load profiles.</div>';
+      }
+    };
+
+    const openEditor = async profileId => {
+      editingId = profileId;
+      const panel = document.getElementById('profileEditorPanel');
+      panel.hidden = false;
+      document.getElementById('profileEditorTitle').textContent = profileId ? 'Edit profile' : 'New profile';
+      document.getElementById('buildResult').hidden = true;
+      if (profileId) {
+        try {
+          const profile = await api(`/profiles/${profileId}`);
+          const form = document.createElement('div');
+          form.innerHTML = profileFormHtml(profile);
+          panel.querySelector('.profile-form').replaceWith(form);
+        } catch (error) {
+          toast('Could not load profile');
+        }
+      } else {
+        const form = document.createElement('div');
+        form.innerHTML = profileFormHtml(null);
+        panel.querySelector('.profile-form').replaceWith(form);
+      }
+    };
+
+    const buildKnowledge = async profileId => {
+      const resultEl = document.getElementById('buildResult');
+      resultEl.hidden = false;
+      resultEl.textContent = 'Building your knowledge base... this can take a moment.';
+      try {
+        const data = await post(`/profiles/${profileId}/build-knowledge`, {});
+        const files = (data.documents || []).map(doc => doc.filename).join(', ');
+        resultEl.textContent = `Knowledge base ${data.mode === 'ai' ? 'AI-expanded' : 'built'} — ${data.documents.length} documents: ${files}`;
+        toast('Knowledge base built');
+      } catch (error) {
+        resultEl.textContent = `Could not build the knowledge base: ${error.message}`;
+      }
+    };
+
+    document.getElementById('newProfileButton').addEventListener('click', () => openEditor(null));
+    document.getElementById('cancelProfileButton').addEventListener('click', () => {
+      document.getElementById('profileEditorPanel').hidden = true;
+    });
+    document.getElementById('saveProfileButton').addEventListener('click', async () => {
+      const data = collectProfileForm();
+      if (!data.name) return toast('Give the profile a name.');
+      try {
+        if (editingId) {
+          await put(`/profiles/${editingId}`, data);
+          toast('Profile updated');
+        } else {
+          const created = await post('/profiles', data);
+          editingId = created.id;
+          toast('Profile created');
+        }
+        load();
+        loadProfiles();
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+    document.getElementById('buildKnowledgeButton').addEventListener('click', async () => {
+      const data = collectProfileForm();
+      if (!data.name) return toast('Save the profile first.');
+      let targetId = editingId;
+      try {
+        if (!targetId) {
+          const created = await post('/profiles', data);
+          targetId = created.id;
+          editingId = targetId;
+        } else {
+          await put(`/profiles/${targetId}`, data);
+        }
+        buildKnowledge(targetId);
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+    load();
+  }
+
+  // ------------------------------------------------------------------- team
+
+  function renderTeam() {
+    content.innerHTML = renderPage(
+      'AI team',
+      'Chain of command',
+      'The manager is the only agent that talks to you. It routes work to a department head, who assigns specialists and verifies their work before anything comes back.',
+      '',
+      `<div class="agent-grid" id="agentGrid"><div class="empty-state">Loading your team...</div></div>`
+    );
+    setActive('team');
+    try {
+      api('/agents').then(agents => {
+        const groups = [
+          { key: 'manager', label: 'Top of the chain' },
+          { key: 'department_head', label: 'Department heads' },
+          { key: 'specialist', label: 'Specialists' },
+        ];
+        const render = group => agents.filter(agent => agent.role === group.key).map(agent => `
+          <article class="agent-card">
+            <div class="agent-card-top"><div class="avatar">${escapeHtml(agent.name.slice(0, 1))}</div><div><h3>${escapeHtml(agent.name)}</h3><small>${escapeHtml(agent.role === 'manager' ? 'Only user-facing agent' : agent.role.replace('_', ' '))}</small></div></div>
+            <p>${escapeHtml(agent.description || '')}</p>
+            ${agent.requires_backtest ? '<small class="eyebrow">Backtested before delivery</small>' : ''}
+          </article>`).join('');
+        document.getElementById('agentGrid').innerHTML = groups.map(group => {
+          const cards = render(group);
+          return cards ? `<div class="team-group"><h2>${escapeHtml(group.label)}</h2><div class="agent-grid">${cards}</div></div>` : '';
+        }).join('') || '<div class="empty-state">No agents are registered.</div>';
+      }).catch(() => {
+        document.getElementById('agentGrid').innerHTML = '<div class="empty-state">Could not reach the AI team service.</div>';
+      });
+    } catch (error) {
+      document.getElementById('agentGrid').innerHTML = '<div class="empty-state">Could not reach the AI team service.</div>';
+    }
+  }
+
+  // ------------------------------------------------------------------ modal
+
+  function showModal(title, contentText) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `<div class="modal-dialog"><header><h2>${escapeHtml(title)}</h2><button class="modal-close" data-close-modal aria-label="Close">×</button></header><div class="preview-content">${escapeHtml(contentText)}</div></div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', event => {
+      if (event.target === modal || event.target.closest('[data-close-modal]')) modal.remove();
+    });
+  }
+
+  // ------------------------------------------------------------------ routes
+
+  function navigate(route) { window.location.hash = route; }
+
+  function route() {
+    const routeName = window.location.hash.replace('#', '') || 'chat';
+    clearPageWork();
+    setActive(routeName);
+    if (routeName === 'queue') renderQueue();
+    else if (routeName === 'history') renderHistory();
+    else if (routeName === 'memory') renderMemory();
+    else if (routeName === 'knowledge') renderKnowledge();
+    else if (routeName === 'profiles') renderProfiles();
+    else if (routeName === 'team') renderTeam();
+    else renderChat();
+    if (routeName === 'chat') loadChatHistory();
+  }
+
+  // ------------------------------------------------------------------- init
+
+  async function checkProviderHealth() {
+    try {
+      const health = await api('/health/provider');
+      if (health.status !== 'ok') {
+        const provider = health.provider || {};
+        const reason = provider.error || (provider.dns_ok === false ? 'The provider host could not be resolved.' : 'The provider is unreachable.');
+        toast(`Model provider unavailable: ${reason}`);
+      }
+    } catch (error) {
+      // The backend itself is unreachable; loadProfiles already surfaces that.
+    }
+  }
+
+  document.querySelectorAll('.nav a').forEach(link => link.addEventListener('click', event => {
+    event.preventDefault();
+    navigate(link.getAttribute('href').slice(1));
+  }));
+  document.getElementById('profileSwitcher').addEventListener('click', () => navigate('profiles'));
+document.getElementById('helpButton').addEventListener('click', () => toast('Ask your AI team anything from Chat. Set up a business profile to build your knowledge base.'));
   window.addEventListener('hashchange', route);
-  route();
+
+  loadProfiles().then(() => {
+    route();
+    refreshQueueBadge();
+    checkProviderHealth();
+    loadQueueConfig();
+    window.setInterval(() => refreshQueueBadge(), 10000);
+    // Keep the connection status honest: if the backend restarts while the page
+    // is open, the sidebar recovers on its own instead of staying "Offline".
+    window.setInterval(() => recheckConnection(), 10000);
+  });
 })();

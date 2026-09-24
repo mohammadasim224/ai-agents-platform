@@ -116,6 +116,19 @@ class AttachmentError(PipelineError):
     user_hint = "Re-upload the file as .txt, .md, .docx, or .pdf."
 
 
+class JobCancelledError(PipelineError):
+    """The user asked for the job to stop and the pipeline honoured it.
+
+    This is not a failure: it is the requested outcome. It is raised at the
+    pipeline's checkpoints so the work stops promptly instead of running to
+    completion and being discarded.
+    """
+
+    code = "cancelled"
+    user_title = "The request was cancelled."
+    user_hint = "Send the request again whenever you are ready."
+
+
 class ArtifactError(PipelineError):
     """A downloadable artifact could not be produced."""
 

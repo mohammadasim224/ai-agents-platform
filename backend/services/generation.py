@@ -9,22 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.database.database import create_generation, create_task
-from backend.orchestrator import PipelineResult, run_pipeline
-
-
-def generate_for_prompt(
-    prompt: str,
-    project_id: str = "demo-project",
-    *,
-    attachment_ids: list[str] | None = None,
-) -> PipelineResult:
-    """Run the full chain of command for a prompt.
-
-    Returns a `PipelineResult`. Failures are represented as a result with
-    `status == "error"` and an explanatory `error` payload, never as a fabricated
-    answer.
-    """
-    return run_pipeline(prompt, project_id=project_id, attachment_ids=attachment_ids)
+from backend.orchestrator import run_pipeline
 
 
 def generate_and_record(

@@ -271,7 +271,7 @@ def test_orchestrator_backtests_sales_scripts(monkeypatch):
             "APPOINTMENT SETTING SCRIPT\n" + "Opening, discovery, qualification, booking, objections. " * 6
         )
 
-    def fake_backtest(specialist_name, script, *, call_context=""):
+    def fake_backtest(specialist_name, script, *, call_context="", **kwargs):
         from backend.evaluations.metrics import BacktestResult
 
         return BacktestResult(
@@ -346,7 +346,7 @@ def test_orchestrator_rejects_script_that_fails_backtest(monkeypatch):
     def fake_specialist(role, prompt, system_prompt="", **kwargs):
         return _text_response("APPOINTMENT SETTING SCRIPT\n" + "Script content. " * 20)
 
-    def failing_backtest(specialist_name, script, *, call_context=""):
+    def failing_backtest(specialist_name, script, *, call_context="", **kwargs):
         from backend.evaluations.metrics import BacktestResult
 
         return BacktestResult(

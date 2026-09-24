@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import uuid
 
-from backend.services.jwt_auth import create_token
+from backend.services.jwt_auth import create_token, hash_password
 
 USERS: dict[str, dict] = {}
-
-
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
 def register_user(email: str, password: str, name: str) -> dict:
