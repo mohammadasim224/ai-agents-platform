@@ -41,6 +41,23 @@ def get_env_float(name: str, default: float) -> float:
         return default
 
 
+def iter_knowledge_files(root: Path) -> list[Path]:
+    """Every markdown file under `root`, skipping hidden directories.
+
+    Backup folders such as `knowledge/business/.backup/` hold superseded copies
+    of the knowledge base. They must never be indexed: doing so feeds the agents
+    an older version of the business as if it were current. Any path segment that
+    starts with a dot (`.backup`, `.git`, ...) is treated as hidden and skipped.
+    """
+    if not root.is_dir():
+        return []
+    return sorted(
+        path
+        for path in root.rglob("*.md")
+        if not any(part.startswith(".") for part in path.relative_to(root).parts)
+    )
+
+
 OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = get_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 

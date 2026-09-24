@@ -141,7 +141,7 @@ def triage(user_request: str, *, attachment_summary: str = "") -> TriageDecision
     if attachment_summary.strip():
         user_prompt += f"\n\n## Attached Files\n{attachment_summary.strip()}"
 
-    result = route_prompt("manager", user_prompt, system_prompt=system_prompt, temperature=0.1)
+    result = route_prompt("manager", user_prompt, system_prompt=system_prompt, temperature=0.1, json_mode=True)
     decision = extract_json(result["content"])
 
     raw_departments = decision.get("departments")
@@ -221,7 +221,7 @@ def rewrite_for_department(
     if extra_context.strip():
         user_prompt += f"\n\n## Additional Context\n{extra_context.strip()}"
 
-    result = route_prompt("manager", user_prompt, system_prompt=system_prompt, temperature=0.2)
+    result = route_prompt("manager", user_prompt, system_prompt=system_prompt, temperature=0.2, json_mode=True)
     payload = extract_json(result["content"])
 
     objective = str(payload.get("objective", "")).strip()

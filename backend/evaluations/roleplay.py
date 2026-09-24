@@ -162,7 +162,9 @@ def simulate_batch(
     if call_context.strip():
         user_prompt += f"\n\n## Call Context\n{call_context.strip()}"
 
-    result = route_prompt("evaluation", user_prompt, system_prompt=system_prompt, temperature=0.8)
+    result = route_prompt(
+        "evaluation", user_prompt, system_prompt=system_prompt, temperature=0.8, json_mode=True
+    )
     payload = extract_json(result["content"])
 
     transcripts = payload.get("transcripts")

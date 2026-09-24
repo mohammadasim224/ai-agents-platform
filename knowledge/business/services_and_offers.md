@@ -1,32 +1,35 @@
----
-type: source_of_truth
-priority: 95
-version: 1
-status: active
----
-# Services & Offers
+# Services and Offers
 
 ## Services
-
-we sell lead generation services around AI-generated UGC meta ads as well an AI appointment setter to call leads within 45 seconds of opting in to book them into the business's calendar. we send automated email+SMS+voice call reminders to prospects leading up to the call. in the rare ocassion that a lead doesnt answer the phone when we call them, we have a nurturing sequence that tries to convert them. we also optimize sales scripts such as appointment setter scripts and closer scripts. we also write ad scripts and ad copy for their ads.
+- Lead generation services using AI-generated UGC meta ads (Facebook & Instagram).
+- AI appointment setter that calls leads within 45 seconds of opting in to book them into the business's calendar.
+- Automated email, SMS, and voice call reminders leading up to prospects' calls.
+- Automated nurturing sequence for leads who don't answer the initial call.
+- Optimization of sales scripts, including appointment setter scripts and closer scripts.
+- Writing ad scripts and ad copy for solar businesses' ads.
 
 ## Offers
+- Pay-per-sit basis: clients only pay after we get them a booked, qualified appointment.
+- Achieve 2x-3x close rate with a 45-second speed to lead.
 
-pay per sit basis - meaning they only pay after we get them a booked, qualified, appointment
-2x-3x your close rate with a 45 second speed to lead
+## Pricing
+- Pay-per-sit basis: payment is only made after a booked, qualified appointment is secured.
 
-## Pricing & Financing
-
-pay per sit basis - meaning they only pay after we get them a booked, qualified, appointment
+## Marketing Channels
+- Meta ads (Facebook & Instagram)
 
 ## Sales Process
-
-A solar business owner sees our ad on instagram or facebook while scrolling. they read/watch the ad and copy and are interested. they click 'learn more' and are redirected to our landing page. they book a call with the calendar on the page and fill in their name, email, phone number, and consent for us to use their phone number to contact them. then they receive reminders leading up to our call and once its time for the call, they join with the google meet link. inn the google meet call we discuss their goals, current situation, and how to get them to where they want to be. then if its a fit, we proceed to payments. after paying, we book them into an onboarding call where we give them a form they fill out to give us enough info. then we start building the systems, make the ads, and launch.
+1. Solar business owner sees our ad on Instagram or Facebook.
+2. They click 'learn more' and are redirected to our landing page.
+3. They book a call via the calendar on the page, providing name, email, phone number, and consent for contact.
+4. They receive reminders leading up to the call and join via Google Meet.
+5. In the call, we discuss their goals, current situation, and how to get them to where they want to be.
+6. If it's a fit, we proceed to payment.
+7. After payment, we book an onboarding call and provide a form for necessary information.
+8. We then build systems, create ads, and launch.
 
 ## Automation Needs
-
-automation 1. try to convert people who no showed a previous call back into a new one with SMS and emails
-automation 2. remind leads to show up leading up to a call with SMS, emails, and voice calls
-automation 3. try to convert people who I couldn't close back into a new call by sending them links to my organic content on youtube.
-automation 4. warm up leads on holidays like new years or christmas in clever ways. example: "is making more money on your new year's resolution?" or "ho ho ho, its santa! whats that? you want more sits for christmas? I don't know... lets talk about it. book a time with me using the link below:  " and maybe thanksgiving as well
-
+- Automation 1: Convert no-show leads back into new calls via SMS and emails.
+- Automation 2: Remind leads to show up for calls with SMS, emails, and voice calls.
+- Automation 3: Convert unclosed leads back into new calls by sending links to organic content on YouTube.
+- Automation 4: Warm up leads on holidays (e.g., New Year's, Christmas, Thanksgiving) with clever messages.

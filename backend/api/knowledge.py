@@ -27,7 +27,9 @@ async def list_knowledge():
 
 
 @router.post("/reindex")
-async def reindex_knowledge():
+def reindex_knowledge():
+    # Declared `def`: ingestion walks and reads every knowledge file, which is
+    # blocking disk work that must not run on the event loop.
     chunks = ingest_knowledge(KNOWLEDGE_DIR)
     documents = {chunk["metadata"]["document"] for chunk in chunks}
     return {

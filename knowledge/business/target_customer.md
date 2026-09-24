@@ -1,16 +1,10 @@
----
-type: source_of_truth
-priority: 90
-version: 1
-status: active
----
 # Target Customer
 
-## Target Customer
+## Who They Are
+Solar Business Owners in the United States looking to grow their solar business.
 
-Solar Business Owner looking to grow their solar business with AI marketing, automated follow-ups, nurturing, and reminders.
+## Their Goals
+To grow their solar business using AI marketing, automated follow-ups, nurturing, and reminders.
 
-## Geographic Profile
-
-The United States of America
-
+## Their Needs
+They need effective lead generation, AI-powered response to leads, and automated follow-up systems to increase conversion and close rates.

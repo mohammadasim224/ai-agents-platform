@@ -113,11 +113,20 @@
   // timer would write into detached nodes and throw. Each page registers its
   // timers here, and `route` clears them before rendering the next page.
   const pageTimers = new Set();
+  // Page-scoped teardown callbacks (a live feed subscription, say). Timers are
+  // cleared by id; anything else a page opens registers a function here so it is
+  // released when the page is replaced.
+  const pageCleanups = new Set();
   let pageToken = 0;
 
   const trackTimer = id => {
     pageTimers.add(id);
     return id;
+  };
+
+  const trackCleanup = fn => {
+    pageCleanups.add(fn);
+    return fn;
   };
 
   const clearPageWork = () => {
@@ -126,6 +135,10 @@
       window.clearInterval(id);
     });
     pageTimers.clear();
+    pageCleanups.forEach(fn => {
+      try { fn(); } catch (error) { /* a failed teardown must not block navigation */ }
+    });
+    pageCleanups.clear();
     pageToken += 1;
   };
 
@@ -484,7 +497,7 @@
 
     const pollJob = async jobId => {
       // The backend watchdog fails a job after `MAX_JOB_RUNTIME_SECONDS`, so
-      // poll a little longer than that. This way the backend reports the real
+      // wait a little longer than that. This way the backend reports the real
       // outcome instead of the UI giving up on a job that is still healthy.
       const maxRuntimeMs = ((state.queueMaxRuntime || 600) + 120) * 1000;
       const MAX_POLL_MS = Math.max(5 * 60 * 1000, maxRuntimeMs);
@@ -519,13 +532,13 @@
         });
         if (!progressEl) {
           // A stable wrapper keeps the card in place while its contents are
-          // replaced on every poll, so the message list does not jump around.
+          // replaced on every update, so the message list does not jump around.
           progressEl = document.createElement('div');
           progressEl.className = 'progress-slot';
           messagesEl.appendChild(progressEl);
         }
         progressEl.innerHTML = html;
-        // The card is rebuilt on every poll, so the button is re-bound here.
+        // The card is rebuilt on every update, so the button is re-bound here.
         const cancelButton = progressEl.querySelector('[data-cancel-job]');
         if (cancelButton) cancelButton.addEventListener('click', () => cancelJob(jobId));
         // Keep the newest activity line in view as the feed grows.
@@ -535,76 +548,146 @@
         scrollBottom();
       };
 
-      const poll = async () => {
-        try {
-          const job = await api(`/queue/${jobId}`);
-          if (!job || typeof job.status !== 'string') {
-            // An unexpected response shape is treated as a transient failure
-            // rather than a finished job, so the loop does not silently stop.
-            throw new Error('Unexpected job status response.');
-          }
-          consecutiveErrors = 0;
-          if (job.status === 'running' || job.status === 'queued') {
-            showProgress(job);
-            return true;
-          }
-          removeProgress();
-          if (job.status === 'done') {
-            const result = job.result || {};
-            const isError = result.status === 'error';
-            // On failure show the human-readable title, keeping the technical
-            // detail in the error block instead of as the main message.
-            const output = isError
-              ? (result.message || 'The request failed.')
-              : (result.output || result.message || '');
-            const meta = {
-              status: result.status,
-              departments: result.departments,
-              artifacts: result.artifacts,
-              error: result.error,
-              knowledge_used: result.knowledge_used,
-            };
-            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: output, meta }) }));
-            scrollBottom();
-            refreshQueueBadge();
-          } else if (job.status === 'failed') {
-            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'The request failed.', meta: { status: 'error', error: { message: job.error || 'Unknown error' } } }) }));
-            scrollBottom();
-          } else if (job.status === 'cancelled') {
-            // Cancelling is a deliberate user action, so it is reported plainly
-            // rather than as an error the user has to interpret.
-            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'Request cancelled. Nothing was delivered.', meta: { status: 'cancelled' } }) }));
-            scrollBottom();
-            refreshQueueBadge();
-          }
-          return false;
-        } catch (error) {
-          consecutiveErrors += 1;
-          // Tolerate a few transient polling failures (backend restart, brief
-          // network drop) before giving up, so a blip does not look like a hang.
-          if (consecutiveErrors < 5) return true;
-          removeProgress();
-          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'Lost contact with the backend while waiting for a result.', meta: { status: 'error', error: { message: error.message || 'The backend is unreachable.' } } }) }));
+      // Render the outcome of a finished job. Shared by the stream and the poll
+      // fallback so both paths produce identical output.
+      const finishJob = job => {
+        removeProgress();
+        if (job.status === 'done') {
+          const result = job.result || {};
+          const isError = result.status === 'error';
+          // On failure show the human-readable title, keeping the technical
+          // detail in the error block instead of as the main message.
+          const output = isError
+            ? (result.message || 'The request failed.')
+            : (result.output || result.message || '');
+          const meta = {
+            status: result.status,
+            departments: result.departments,
+            artifacts: result.artifacts,
+            error: result.error,
+            knowledge_used: result.knowledge_used,
+          };
+          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: output, meta }) }));
           scrollBottom();
-          return false;
+          refreshQueueBadge();
+        } else if (job.status === 'failed') {
+          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'The request failed.', meta: { status: 'error', error: { message: job.error || 'Unknown error' } } }) }));
+          scrollBottom();
+        } else if (job.status === 'cancelled') {
+          // Cancelling is a deliberate user action, so it is reported plainly
+          // rather than as an error the user has to interpret.
+          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'Request cancelled. Nothing was delivered.', meta: { status: 'cancelled' } }) }));
+          scrollBottom();
+          refreshQueueBadge();
         }
       };
 
-      while (await poll()) {
-        // Leaving the chat page detaches these nodes. The job keeps running in
-        // the backend and is picked up again by `resumeActiveJob` on return.
-        if (!isCurrentPage(token) || !document.body.contains(messagesEl)) {
-          removeProgress();
-          break;
+      const isTerminal = job => job.status === 'done' || job.status === 'failed' || job.status === 'cancelled';
+
+      // The poll fallback: used when the browser has no `EventSource`, or when
+      // the stream cannot be established. It is the original behaviour, so a
+      // missing push channel degrades to a working (if less live) UI.
+      const pollLoop = async () => {
+        const poll = async () => {
+          try {
+            const job = await api(`/queue/${jobId}`);
+            if (!job || typeof job.status !== 'string') {
+              // An unexpected response shape is treated as a transient failure
+              // rather than a finished job, so the loop does not silently stop.
+              throw new Error('Unexpected job status response.');
+            }
+            consecutiveErrors = 0;
+            if (!isTerminal(job)) {
+              showProgress(job);
+              return true;
+            }
+            finishJob(job);
+            return false;
+          } catch (error) {
+            consecutiveErrors += 1;
+            // Tolerate a few transient polling failures (backend restart, brief
+            // network drop) before giving up, so a blip does not look like a hang.
+            if (consecutiveErrors < 5) return true;
+            removeProgress();
+            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'Lost contact with the backend while waiting for a result.', meta: { status: 'error', error: { message: error.message || 'The backend is unreachable.' } } }) }));
+            scrollBottom();
+            return false;
+          }
+        };
+
+        while (await poll()) {
+          // Leaving the chat page detaches these nodes. The job keeps running in
+          // the backend and is picked up again by `resumeActiveJob` on return.
+          if (!isCurrentPage(token) || !document.body.contains(messagesEl)) {
+            removeProgress();
+            break;
+          }
+          if (Date.now() - startedAt > MAX_POLL_MS) {
+            removeProgress();
+            messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'This request is taking longer than expected.', meta: { status: 'error', error: { message: 'The job is still running. Check the Queue page for its status.' } } }) }));
+            scrollBottom();
+            break;
+          }
+          await new Promise(resolve => window.setTimeout(resolve, POLL_INTERVAL_MS));
         }
-        if (Date.now() - startedAt > MAX_POLL_MS) {
-          removeProgress();
-          messagesEl.appendChild(Object.assign(document.createElement('div'), { className: 'msg assistant', innerHTML: renderMessage({ role: 'assistant', content: 'This request is taking longer than expected.', meta: { status: 'error', error: { message: 'The job is still running. Check the Queue page for its status.' } } }) }));
-          scrollBottom();
-          break;
+      };
+
+      // The live path: the backend pushes each progress write as it happens, so
+      // the activity feed and the streamed preview update without polling.
+      const streamLoop = () => new Promise(resolve => {
+        let settled = false;
+        let source;
+        let guard;
+        // `settle` resolves once with the given outcome; `done` is the plain
+        // "finished, no fallback needed" case.
+        const settle = outcome => {
+          if (settled) return;
+          settled = true;
+          if (guard) window.clearInterval(guard);
+          if (source) source.close();
+          resolve(outcome);
+        };
+        const done = () => settle(undefined);
+        try {
+          source = new EventSource(`${apiBase}/queue/${jobId}/events`);
+        } catch (error) {
+          // No `EventSource` support: fall back rather than leaving the user
+          // staring at a frozen card.
+          settle('fallback');
+          return;
         }
-        await new Promise(resolve => window.setTimeout(resolve, POLL_INTERVAL_MS));
-      }
+        source.onmessage = event => {
+          let job;
+          try { job = JSON.parse(event.data); } catch (error) { return; }
+          if (!job || typeof job.status !== 'string') return;
+          if (!isTerminal(job)) {
+            showProgress(job);
+            return;
+          }
+          finishJob(job);
+          done();
+        };
+        source.onerror = () => {
+          // `EventSource` reconnects on its own, but a stream that never opened
+          // (or a job the server no longer knows) would retry forever. Hand the
+          // job back to the poll loop, which reports the real outcome.
+          if (source.readyState === EventSource.CLOSED) settle('fallback');
+        };
+        // Leaving the page detaches the nodes the stream writes into, so stop
+        // listening; the job keeps running and `resumeActiveJob` picks it up.
+        guard = window.setInterval(() => {
+          if (!isCurrentPage(token) || !document.body.contains(messagesEl)) {
+            removeProgress();
+            done();
+          }
+        }, 1000);
+        // Bound the stream the same way the poll loop is bounded, so a job that
+        // never reports a terminal state cannot leave the card up forever.
+        window.setTimeout(() => settle('fallback'), MAX_POLL_MS);
+      });
+
+      const outcome = await streamLoop();
+      if (outcome === 'fallback') await pollLoop();
     };
     const send = async () => {
       const text = input.value.trim();
@@ -720,15 +803,51 @@
 
   // ------------------------------------------------------------------ queue
 
+  // The most recent snapshot of every job, kept current by the live feed. The
+  // sidebar badge and the queue page both read from it, so a job that starts,
+  // progresses, or finishes is reflected without a page refresh.
+  const queueJobs = new Map();
+
+  // Open the queue-wide Server-Sent Events feed. The backend pushes a snapshot
+  // for every job as it changes, so callers never poll. Returns a close
+  // function; `onError` fires when the stream cannot be established or has
+  // closed for good, which lets the caller fall back to polling.
+  const openQueueFeed = (onJob, onError) => {
+    let source;
+    try {
+      source = new EventSource(`${apiBase}/queue/events`);
+    } catch (error) {
+      // No `EventSource` support: let the caller keep its poll fallback.
+      if (onError) onError();
+      return () => {};
+    }
+    source.onmessage = event => {
+      let job;
+      try { job = JSON.parse(event.data); } catch (error) { return; }
+      if (job && job.id) onJob(job);
+    };
+    source.onerror = () => {
+      // `EventSource` reconnects on its own, but a stream that has closed for
+      // good would retry forever, so hand control back to the poll fallback.
+      if (source.readyState === EventSource.CLOSED && onError) onError();
+    };
+    return () => source.close();
+  };
+
+  const updateQueueBadge = () => {
+    const active = [...queueJobs.values()].filter(job => job.status === 'queued' || job.status === 'running').length;
+    const badge = document.getElementById('queueBadge');
+    if (badge) {
+      badge.hidden = active === 0;
+      badge.textContent = String(active);
+    }
+  };
+
   async function refreshQueueBadge() {
     try {
       const jobs = await api('/queue');
-      const active = jobs.filter(job => job.status === 'queued' || job.status === 'running').length;
-      const badge = document.getElementById('queueBadge');
-      if (badge) {
-        badge.hidden = active === 0;
-        badge.textContent = String(active);
-      }
+      jobs.forEach(job => queueJobs.set(job.id, job));
+      updateQueueBadge();
     } catch (error) { /* backend offline */ }
   }
 
@@ -741,11 +860,9 @@
       `<div class="panel data-panel"><div class="data-toolbar"><h2>Recent jobs</h2><span class="eyebrow" id="queueCount">Loading...</span></div><div class="queue-grid" id="queueGrid"><div class="empty-state">Loading jobs...</div></div></div>`
     );
     setActive('queue');
-    let timer = null;
-    // The page auto-refreshes while a job runs. Replacing the grid's HTML on
-    // every tick would make the Cancel buttons unstable to click (the node is
-    // swapped out mid-click), so the grid is only rebuilt when something the
-    // user can see actually changed.
+    // The grid is only rebuilt when something the user can see actually changed.
+    // Replacing the HTML on every update would make the Cancel buttons unstable
+    // to click (the node is swapped out mid-click).
     let lastSignature = null;
     // The most recent job rows, so "View output" can show a result without
     // refetching.
@@ -825,57 +942,99 @@
       if (!countEl || !gridEl) return;
       try {
         const jobs = await api('/queue');
-        countEl.textContent = `${jobs.length} jobs`;
-        // Only rebuild the grid when something visible changed. Replacing the
-        // HTML on every tick would swap the Cancel buttons out from under the
-        // pointer, making them unreliable to click.
-        const signature = JSON.stringify(jobs.map(job => [
-          job.id, job.status, job.cancel_requested,
-          (job.progress || {}).percent, (job.progress || {}).label,
-          (job.progress || {}).eta_seconds, (job.progress || {}).estimate_seconds,
-          // The activity feed is part of what the user sees, so a new line must
-          // trigger a rebuild. Only the count and the newest preview are needed:
-          // the count changes when a line is added, and the preview changes while
-          // a generation is still streaming into the last line.
-          ((job.progress || {}).activity || []).length,
-          (((job.progress || {}).activity || []).slice(-1)[0] || {}).preview,
-        ]));
-        if (signature !== lastSignature) {
-          lastSignature = signature;
-          gridEl.innerHTML = jobs.length
-            ? jobs.map(jobCard).join('')
-            : '<div class="empty-state">No jobs yet. Send a message in Chat to start one.</div>';
-          // Cache the job results so View output does not need another request.
-          jobs.forEach(job => jobCache.set(job.id, job));
-          gridEl.querySelectorAll('[data-cancel-job]').forEach(button => button.addEventListener('click', async () => {
-            button.disabled = true;
-            button.textContent = 'Cancelling...';
-            try {
-              await post(`/queue/${button.dataset.cancelJob}/cancel`, {});
-              toast('Cancelling the job...');
-            } catch (error) {
-              toast(`Could not cancel the job: ${error.message}`, 'error');
-            }
-            load();
-          }));
-          gridEl.querySelectorAll('[data-view-job]').forEach(button => button.addEventListener('click', () => {
-            const job = jobCache.get(button.dataset.viewJob);
-            if (!job) return;
-            const output = jobOutput(job);
-            showModal(output.title, output.body);
-          }));
-        }
-        // Keep the page live while something is running, so the progress bars
-        // move without the user having to press Refresh.
-        const active = jobs.some(job => job.status === 'running' || job.status === 'queued');
-        window.clearTimeout(timer);
-        if (active) timer = trackTimer(window.setTimeout(load, 2000));
+        jobs.forEach(job => {
+          jobCache.set(job.id, job);
+          queueJobs.set(job.id, job);
+        });
+        updateQueueBadge();
+        render(jobs);
       } catch (error) {
         gridEl.innerHTML = '<div class="empty-state">Could not reach the queue service.</div>';
       }
     };
+
+    // Render the given job rows. Only rebuild the grid when something visible
+    // changed: replacing the HTML on every tick would swap the Cancel buttons
+    // out from under the pointer, making them unreliable to click.
+    const render = jobs => {
+      const countEl = document.getElementById('queueCount');
+      const gridEl = document.getElementById('queueGrid');
+      if (!countEl || !gridEl) return;
+      countEl.textContent = `${jobs.length} jobs`;
+      const signature = JSON.stringify(jobs.map(job => [
+        job.id, job.status, job.cancel_requested,
+        (job.progress || {}).percent, (job.progress || {}).label,
+        (job.progress || {}).eta_seconds, (job.progress || {}).estimate_seconds,
+        // The activity feed is part of what the user sees, so a new line must
+        // trigger a rebuild. Only the count and the newest preview are needed:
+        // the count changes when a line is added, and the preview changes while
+        // a generation is still streaming into the last line.
+        ((job.progress || {}).activity || []).length,
+        (((job.progress || {}).activity || []).slice(-1)[0] || {}).preview,
+      ]));
+      if (signature === lastSignature) return;
+      lastSignature = signature;
+      gridEl.innerHTML = jobs.length
+        ? jobs.map(jobCard).join('')
+        : '<div class="empty-state">No jobs yet. Send a message in Chat to start one.</div>';
+      // Cache the job results so View output does not need another request.
+      jobs.forEach(job => jobCache.set(job.id, job));
+      gridEl.querySelectorAll('[data-cancel-job]').forEach(button => button.addEventListener('click', async () => {
+        button.disabled = true;
+        button.textContent = 'Cancelling...';
+        try {
+          await post(`/queue/${button.dataset.cancelJob}/cancel`, {});
+          toast('Cancelling the job...');
+        } catch (error) {
+          toast(`Could not cancel the job: ${error.message}`, 'error');
+        }
+        load();
+      }));
+      gridEl.querySelectorAll('[data-view-job]').forEach(button => button.addEventListener('click', () => {
+        const job = jobCache.get(button.dataset.viewJob);
+        if (!job) return;
+        const output = jobOutput(job);
+        showModal(output.title, output.body);
+      }));
+    };
+
+    // The live path: the backend pushes a snapshot for every job as it changes,
+    // so the progress bars and the activity feed move without the user having to
+    // press Refresh. A progress frame carries only `{id, status, progress}`, so
+    // it is merged into the cached row rather than replacing it: the kind, the
+    // prompt, and the timestamps come from the last full fetch.
+    const applyFeedJob = job => {
+      const merged = { ...(jobCache.get(job.id) || {}), ...job };
+      jobCache.set(job.id, merged);
+      queueJobs.set(job.id, merged);
+      updateQueueBadge();
+      const jobs = [...jobCache.values()].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+      render(jobs);
+    };
+
+    // The poll fallback: used when the browser has no `EventSource`, or when the
+    // stream cannot be established. It keeps the page live (if less instantly)
+    // rather than leaving it frozen.
+    let pollTimer = null;
+    const startPolling = () => {
+      const tick = async () => {
+        await load();
+        const active = [...jobCache.values()].some(job => job.status === 'running' || job.status === 'queued');
+        window.clearTimeout(pollTimer);
+        if (active) pollTimer = trackTimer(window.setTimeout(tick, 2000));
+      };
+      tick();
+    };
+
     document.getElementById('refreshQueueButton').addEventListener('click', load);
+    // Seed the grid from the API, then switch to the live feed. The feed sends
+    // the current rows on connect, so the seed is only there to paint instantly.
     load();
+    const closeFeed = openQueueFeed(applyFeedJob, () => {
+      // The stream is unavailable, so fall back to polling.
+      if (!pollTimer) startPolling();
+    });
+    trackCleanup(closeFeed);
   }
 
   // The backend owns the timing constants, so the UI asks for them rather than
@@ -1351,7 +1510,15 @@ document.getElementById('helpButton').addEventListener('click', () => toast('Ask
     refreshQueueBadge();
     checkProviderHealth();
     loadQueueConfig();
-    window.setInterval(() => refreshQueueBadge(), 10000);
+    // Keep the sidebar badge live from the queue-wide feed, so a job that starts
+    // or finishes updates the count without a page refresh. The feed is opened
+    // once for the lifetime of the page; the periodic refresh below is only a
+    // safety net for a stream that could not be established.
+    openQueueFeed(job => {
+      queueJobs.set(job.id, job);
+      updateQueueBadge();
+    });
+    window.setInterval(() => refreshQueueBadge(), 30000);
     // Keep the connection status honest: if the backend restarts while the page
     // is open, the sidebar recovers on its own instead of staying "Offline".
     window.setInterval(() => recheckConnection(), 10000);

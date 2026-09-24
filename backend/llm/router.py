@@ -259,6 +259,7 @@ def _chat_completion(
     max_tokens: int | None = None,
     on_delta: Callable[[str], None] | None = None,
     stream: bool = False,
+    json_mode: bool = False,
 ) -> dict[str, Any]:
     """Call the chat completions endpoint with retries and strict error handling.
 
@@ -267,6 +268,13 @@ def _chat_completion(
     request. Streaming is a transport detail, not a second implementation: both
     paths share the same retry loop, status handling, and error typing, and
     return the same shape, so callers never branch on which was used.
+
+    When `json_mode` is set the request asks the provider to constrain the
+    completion to a single JSON object (`response_format`). Describing the JSON
+    contract in the prompt is not always enough: some models answer with prose
+    ("I'll read the knowledge files first...") or emit tool-call markup instead
+    of the object. Constraining the response at the provider level removes that
+    whole class of failure before it reaches `extract_json`.
     """
     _require_api_key()
     streaming = stream
@@ -275,7 +283,7 @@ def _chat_completion(
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
+    payload: dict[str, Any] = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -284,6 +292,8 @@ def _chat_completion(
         "temperature": LLM_TEMPERATURE if temperature is None else temperature,
         "max_tokens": LLM_MAX_TOKENS if max_tokens is None else max_tokens,
     }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     if streaming:
         payload["stream"] = True
 
@@ -434,6 +444,7 @@ def call_openrouter(
     temperature: float | None = None,
     max_tokens: int | None = None,
     on_delta: Callable[[str], None] | None = None,
+    json_mode: bool = False,
 ) -> dict[str, Any]:
     """Call the chat completions endpoint. See `_chat_completion` for behaviour.
 
@@ -447,6 +458,7 @@ def call_openrouter(
         max_tokens=max_tokens,
         on_delta=on_delta,
         stream=on_delta is not None,
+        json_mode=json_mode,
     )
 
 
@@ -483,20 +495,83 @@ def route_prompt(
     temperature: float | None = None,
     max_tokens: int | None = None,
     on_delta: Callable[[str], None] | None = None,
+    json_mode: bool = False,
 ) -> dict[str, Any]:
     """Route a prompt to the model configured for the given role.
 
     When `on_delta` is given the response is streamed and the callback receives
     the text generated so far; otherwise it is a normal blocking request.
+
+    When `json_mode` is set the provider is asked to constrain the completion to
+    a single JSON object and the reply is validated here. If the model still
+    returns something unparseable (prose, tool-call markup, truncation), one
+    corrective retry is sent that names the failure and repeats the contract.
+    The returned `content` is therefore valid JSON whenever `json_mode` is set,
+    so callers can parse it with `extract_json` without a second failure mode.
     """
-    return call_openrouter(
-        get_model_for(role),
+    model = get_model_for(role)
+    result = call_openrouter(
+        model,
         prompt,
         system_prompt,
         temperature=temperature,
         max_tokens=max_tokens,
         on_delta=on_delta,
+        json_mode=json_mode,
     )
+    # Streaming and JSON are mutually exclusive in practice (only free-text
+    # specialist output is streamed), so repair only applies to blocking calls.
+    if json_mode and on_delta is None:
+        result = _ensure_json_content(
+            model,
+            prompt,
+            system_prompt,
+            result,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    return result
+
+
+_JSON_REPAIR_INSTRUCTION = (
+    "Your previous reply was not a single valid JSON object, so it was rejected. "
+    "Reply with ONLY the required JSON object and nothing else: no prose, no "
+    "markdown fences, no tool calls, no commentary before or after."
+)
+
+
+def _ensure_json_content(
+    model: str,
+    prompt: str,
+    system_prompt: str,
+    result: dict[str, Any],
+    *,
+    temperature: float | None,
+    max_tokens: int | None,
+) -> dict[str, Any]:
+    """Return a result whose `content` parses as JSON, repairing once if needed.
+
+    The first failure is re-raised when the repair also fails, because it carries
+    the preview of what the model actually returned for the original task, which
+    is more useful for diagnosis than the repair attempt's output.
+    """
+    try:
+        extract_json(result["content"])
+        return result
+    except ProviderError as first_error:
+        repair = call_openrouter(
+            model,
+            f"{prompt}\n\n## Correction Required\n{_JSON_REPAIR_INSTRUCTION}",
+            system_prompt,
+            temperature=0.0,
+            max_tokens=max_tokens,
+            json_mode=True,
+        )
+        try:
+            extract_json(repair["content"])
+        except ProviderError:
+            raise first_error
+        return repair
 
 # How often a streaming call reports the text generated so far. The provider
 # emits many small deltas per second; forwarding every one would flood the

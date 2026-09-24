@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from backend.config import iter_knowledge_files
+
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if not text.startswith("---\n"):
@@ -57,7 +59,7 @@ def ingest_knowledge(root: str | Path) -> list[dict[str, Any]]:
     knowledge_root = Path(root)
     all_chunks: list[dict[str, Any]] = []
 
-    for path in sorted(knowledge_root.rglob("*.md")):
+    for path in iter_knowledge_files(knowledge_root):
         relative = path.relative_to(knowledge_root)
         text = path.read_text(encoding="utf-8")
         metadata, body = _parse_frontmatter(text)

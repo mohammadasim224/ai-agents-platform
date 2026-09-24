@@ -77,7 +77,9 @@ def score_batch(
     rendered = "\n\n---\n\n".join(_render_transcript(transcript) for transcript in transcripts)
     user_prompt = f"## Transcripts To Score\n\n{rendered}"
 
-    result = route_prompt("evaluation", user_prompt, system_prompt=system_prompt, temperature=0.1)
+    result = route_prompt(
+        "evaluation", user_prompt, system_prompt=system_prompt, temperature=0.1, json_mode=True
+    )
     payload = extract_json(result["content"])
 
     raw_results = payload.get("results")

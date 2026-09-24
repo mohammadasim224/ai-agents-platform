@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from backend.config import KNOWLEDGE_DIR, PROMPTS_DIR
+from backend.config import KNOWLEDGE_DIR, PROMPTS_DIR, iter_knowledge_files
 from backend.errors import PipelineError
 
 
@@ -49,7 +49,7 @@ def knowledge_catalog() -> tuple[KnowledgeSource, ...]:
         return ()
 
     sources: list[KnowledgeSource] = []
-    for path in sorted(KNOWLEDGE_DIR.rglob("*.md")):
+    for path in iter_knowledge_files(KNOWLEDGE_DIR):
         relative = path.relative_to(KNOWLEDGE_DIR)
         try:
             title = _first_heading(path.read_text(encoding="utf-8", errors="replace"))
