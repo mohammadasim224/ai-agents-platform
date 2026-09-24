@@ -8,7 +8,9 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 @router.post("")
-async def create_task(payload: dict):
+def create_task(payload: dict):
+    # Declared `def`: `enqueue_task` runs the blocking pipeline, so FastAPI must
+    # run it in its threadpool rather than on the event loop.
     project_id = payload.get("project_id", "demo-project")
     prompt = payload.get("input") or payload.get("prompt") or ""
     attachment_ids = payload.get("attachment_ids") or []

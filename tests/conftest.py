@@ -30,6 +30,19 @@ def _isolate_database(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_knowledge(tmp_path, monkeypatch):
+    """Point the knowledge builder at a throwaway folder for this test.
+
+    Without this, a test that builds a knowledge base writes into the real
+    `knowledge/business/` directory and overwrites the live business knowledge
+    (for example replacing `company.md` with a fixture profile's name).
+    """
+    from backend.services import knowledge_builder
+
+    monkeypatch.setattr(knowledge_builder, "BUSINESS_DIR", tmp_path / "knowledge" / "business")
+
+
+@pytest.fixture(autouse=True)
 def _block_live_provider(monkeypatch):
     """Prevent tests from making real network calls to the model provider.
 

@@ -8,12 +8,15 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 
 
 @router.post("/team-campaign")
-async def team_campaign(payload: dict):
+def team_campaign(payload: dict):
     """Run a request through the full chain of command.
 
     Returns the manager's final answer plus the stage-by-stage trace so the caller
     can see how the work moved through the organization. On failure the response
     carries an `error` payload rather than a substituted answer.
+
+    Declared `def` so FastAPI runs the blocking pipeline in its threadpool instead
+    of on the event loop, which would freeze every other request while it runs.
     """
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:

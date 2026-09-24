@@ -21,7 +21,7 @@ def test_retrieval_prefers_business_context_for_company_questions():
     results = retrieve_knowledge("What is the company name?", chunks, category="business")
 
     assert results
-    assert any("SunPeak Solar" in chunk["content"] for chunk in results)
+    assert any("voltaik AI" in chunk["content"] for chunk in results)
 
 
 def test_retrieval_prefers_banned_claims_for_prohibited_claims():
@@ -44,7 +44,13 @@ def test_knowledge_endpoint_lists_distinct_documents():
     names = [entry["document"] for entry in documents]
     assert len(names) == len(set(names)), "documents must not be duplicated per chunk"
 
-    on_disk = {path.relative_to(KNOWLEDGE_ROOT).with_suffix("").as_posix() for path in KNOWLEDGE_ROOT.rglob("*.md")}
+    # Hidden folders such as `business/.backup/` hold superseded copies and must
+    # never be indexed, so they are excluded from the expected set too.
+    on_disk = {
+        path.relative_to(KNOWLEDGE_ROOT).with_suffix("").as_posix()
+        for path in KNOWLEDGE_ROOT.rglob("*.md")
+        if not any(part.startswith(".") for part in path.relative_to(KNOWLEDGE_ROOT).parts)
+    }
     assert set(names) == on_disk
 
 

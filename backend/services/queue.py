@@ -17,6 +17,7 @@ import contextvars
 import inspect
 import threading
 import time
+from queue import Full, Queue
 from typing import Any, Callable
 
 from backend.config import PIPELINE_DEADLINE_SECONDS
@@ -51,6 +52,25 @@ _current_item: contextvars.ContextVar[dict[str, Any] | None] = contextvars.Conte
 # departments and subtasks). A lock keeps the append/trim, the payload snapshot,
 # and the progress write from interleaving.
 _activity_lock = threading.Lock()
+
+# Live listeners per job, used by the SSE endpoint to push progress instead of
+# making the browser poll. Each subscriber gets its own bounded queue: a slow or
+# abandoned reader fills its queue and is then skipped, so it can never stall the
+# worker thread that is producing the updates.
+_subscribers: dict[str, list[Queue]] = {}
+_subscribers_lock = threading.Lock()
+
+# Live listeners for the queue as a whole, used by the queue page and the
+# sidebar badge. A per-job listener only hears about its own job; this one hears
+# about every job, so a new job, a status change, or a progress write appears
+# without the browser polling.
+_feed_subscribers: list[Queue] = []
+_feed_lock = threading.Lock()
+
+# How many updates a single listener may fall behind before its queue is treated
+# as full and further updates are dropped for it. Progress is a snapshot, not a
+# log, so dropping intermediate frames is harmless: the next one supersedes it.
+SUBSCRIBER_QUEUE_SIZE = 100
 
 # A job that runs longer than this is considered hung and is failed so the
 # single-worker queue can move on to the next job. The pipeline enforces its own
@@ -163,6 +183,9 @@ def report_progress(
         update_queue_item(item["id"], progress=payload)
     except Exception:  # noqa: BLE001 - progress must never break the job
         pass
+    # Push the same snapshot to live listeners. Published after the write so a
+    # listener that re-reads the row sees consistent data.
+    _publish(item["id"], payload)
 
 
 def report_activity(
@@ -226,6 +249,9 @@ def report_activity(
             update_queue_item(item["id"], progress=payload)
         except Exception:  # noqa: BLE001 - activity must never break the job
             pass
+        # A new activity line is exactly what the live view is waiting for, so it
+        # is pushed immediately rather than waiting for the next progress write.
+        _publish(item["id"], payload)
 
 
 def _elapsed_seconds(item: dict[str, Any]) -> float:
@@ -292,11 +318,119 @@ def submit(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Enqueue a job and make sure the worker is running."""
     item = enqueue_item(kind, payload)
     _ensure_worker()
+    # Announce the new job so a queue page that is already open shows it without
+    # waiting for the next poll.
+    if _feed_subscribers:
+        _publish_feed(item)
     return item
 
 
 def status(item_id: str) -> dict[str, Any] | None:
     return get_queue_item(item_id)
+
+
+def subscribe(item_id: str) -> Queue:
+    """Register a live listener for a job's progress.
+
+    Returns a bounded queue that receives a snapshot on every progress write.
+    The caller must pair this with `unsubscribe` (a `finally` block) or the
+    registry would grow for the lifetime of the process.
+    """
+    channel: Queue = Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
+    with _subscribers_lock:
+        _subscribers.setdefault(item_id, []).append(channel)
+    return channel
+
+
+def unsubscribe(item_id: str, channel: Queue) -> None:
+    """Remove a listener registered with `subscribe`."""
+    with _subscribers_lock:
+        channels = _subscribers.get(item_id)
+        if not channels:
+            return
+        if channel in channels:
+            channels.remove(channel)
+        if not channels:
+            _subscribers.pop(item_id, None)
+
+
+def _publish(item_id: str, payload: dict[str, Any]) -> None:
+    """Fan a job snapshot out to live listeners.
+
+    Best-effort and non-blocking: a listener whose queue is full is skipped
+    rather than waited on, because the worker thread must never be held up by a
+    slow reader. Progress is a snapshot, so a dropped frame is superseded by the
+    next one.
+
+    Two shapes reach here: a full job row (from `_publish_current`, carrying
+    `status` and `result`) and a bare progress blob (from `report_progress` and
+    `report_activity`). The blob is wrapped into the row shape so every frame a
+    client receives has the same `{id, status, progress}` fields, which is what
+    lets the UI treat a live update and a fetched row identically.
+    """
+    if "status" not in payload:
+        payload = {"id": item_id, "status": "running", "progress": payload}
+    with _subscribers_lock:
+        channels = list(_subscribers.get(item_id, ()))
+    for channel in channels:
+        try:
+            channel.put_nowait(payload)
+        except Full:
+            pass
+    # The queue-wide feed hears about every job, so the queue page and the badge
+    # update live. The payload is tagged with its job id because a feed listener
+    # is watching many jobs at once.
+    if _feed_subscribers:
+        _publish_feed({**payload, "id": payload.get("id") or item_id})
+
+
+def _publish_current(item_id: str) -> None:
+    """Publish the job's stored row, used for terminal states.
+
+    The progress writes carry only the progress blob, so the final frame is read
+    back from the database to include the status and result the client needs to
+    finish. A missing row is ignored: the job may have been reclaimed.
+    """
+    item = get_queue_item(item_id)
+    if item:
+        _publish(item_id, item)
+
+
+def subscribe_feed() -> Queue:
+    """Register a listener for every job's updates.
+
+    This is the queue-wide counterpart to `subscribe`: the queue page and the
+    sidebar badge use it to stay live without polling. The caller must pair it
+    with `unsubscribe_feed` (a `finally` block) or the registry would grow for
+    the lifetime of the process.
+    """
+    channel: Queue = Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
+    with _feed_lock:
+        _feed_subscribers.append(channel)
+    return channel
+
+
+def unsubscribe_feed(channel: Queue) -> None:
+    """Remove a listener registered with `subscribe_feed`."""
+    with _feed_lock:
+        if channel in _feed_subscribers:
+            _feed_subscribers.remove(channel)
+
+
+def _publish_feed(payload: dict[str, Any]) -> None:
+    """Fan a job snapshot out to every queue-wide listener.
+
+    Best-effort and non-blocking, exactly like `_publish`: a listener whose
+    queue is full is skipped rather than waited on, because the worker thread
+    must never be held up by a slow reader.
+    """
+    with _feed_lock:
+        channels = list(_feed_subscribers)
+    for channel in channels:
+        try:
+            channel.put_nowait(payload)
+        except Full:
+            pass
 
 
 def config() -> dict[str, Any]:
@@ -319,7 +453,13 @@ def cancel(item_id: str) -> dict[str, Any] | None:
     worker stops it at its next checkpoint, because a provider call already in
     flight cannot be aborted safely from another thread.
     """
-    return request_cancel(item_id)
+    item = request_cancel(item_id)
+    # A queued job is cancelled outright, so its new status must reach the live
+    # feed immediately; a running job is only flagged, and its next progress
+    # write carries the flag.
+    if item and _feed_subscribers:
+        _publish_feed(item)
+    return item
 
 
 def _ensure_worker() -> None:
@@ -336,6 +476,17 @@ def _ensure_worker() -> None:
     if _watchdog is None or not _watchdog.is_alive():
         _watchdog = threading.Thread(target=_run_watchdog, name="queue-watchdog", daemon=True)
         _watchdog.start()
+
+
+def start_worker() -> None:
+    """Start the queue worker and watchdog.
+
+    Called at server startup so jobs left `queued` by a restart are picked up
+    immediately, instead of waiting for someone to submit a new job (which is the
+    only thing that used to start the worker). Idempotent: calling it when the
+    worker is already running is a no-op.
+    """
+    _ensure_worker()
 
 
 def _run_worker() -> None:
@@ -368,6 +519,17 @@ def _next_queued() -> dict[str, Any] | None:
     return next_queued_item()
 
 
+def _finish(item: dict[str, Any], started_at: str, **fields: Any) -> None:
+    """Complete a job and push the terminal row to live listeners.
+
+    Every exit path from `_process` goes through here so the SSE stream always
+    receives a final frame carrying the status and result, which is what lets the
+    client close the connection instead of waiting for a timeout.
+    """
+    finish_queue_item(item["id"], started_at, **fields)
+    _publish_current(item["id"])
+
+
 def _process(item: dict[str, Any]) -> None:
     handler = HANDLERS.get(item["kind"])
     started_at = utc_now()
@@ -377,8 +539,8 @@ def _process(item: dict[str, Any]) -> None:
     update_queue_item(item["id"], status="running", started_at=started_at)
 
     if handler is None:
-        finish_queue_item(
-            item["id"],
+        _finish(
+            item,
             started_at,
             status="failed",
             error=f"No handler registered for queue kind '{item['kind']}'.",
@@ -388,8 +550,8 @@ def _process(item: dict[str, Any]) -> None:
     # The user may have cancelled between the job being picked and this point.
     # Honour it before spending any provider calls on work nobody wants.
     if is_cancel_requested(item["id"]):
-        finish_queue_item(
-            item["id"],
+        _finish(
+            item,
             started_at,
             status="cancelled",
             error="Cancelled by the user before it started.",
@@ -411,15 +573,15 @@ def _process(item: dict[str, Any]) -> None:
     except JobCancelledError:
         # Cancellation is the requested outcome, not a failure, so it is
         # recorded as `cancelled` rather than `failed`.
-        finish_queue_item(
-            item["id"],
+        _finish(
+            item,
             started_at,
             status="cancelled",
             error="Cancelled by the user.",
         )
         return
     except Exception as exc:  # noqa: BLE001 - job failures are reported, not fatal
-        finish_queue_item(item["id"], started_at, status="failed", error=str(exc))
+        _finish(item, started_at, status="failed", error=str(exc))
         return
     finally:
         _current_item.reset(token)
@@ -427,8 +589,8 @@ def _process(item: dict[str, Any]) -> None:
     # A cancel that arrived while the handler was finishing still wins: the user
     # asked for the work to stop, so the result is discarded rather than shown.
     if is_cancel_requested(item["id"]):
-        finish_queue_item(
-            item["id"],
+        _finish(
+            item,
             started_at,
             status="cancelled",
             error="Cancelled by the user.",
@@ -437,7 +599,7 @@ def _process(item: dict[str, Any]) -> None:
 
     # `finish_queue_item` is a no-op when the watchdog already failed this job
     # for exceeding its runtime, which prevents a late result from resurrecting it.
-    finish_queue_item(item["id"], started_at, status="done", result=result)
+    _finish(item, started_at, status="done", result=result)
 
 
 def shutdown() -> None:

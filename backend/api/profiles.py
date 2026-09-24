@@ -47,12 +47,15 @@ async def delete_profile_route(profile_id: str):
 
 
 @router.post("/{profile_id}/build-knowledge")
-async def build_knowledge_route(profile_id: str):
+def build_knowledge_route(profile_id: str):
     """Convert a profile into a knowledge base.
 
     Runs the AI expansion when a provider is configured and falls back to the
     deterministic template output otherwise, so the user always gets a usable
     knowledge base.
+
+    Declared `def` so FastAPI runs the blocking build (file writes plus a model
+    call) in its threadpool instead of on the event loop.
     """
     profile = get_profile(profile_id)
     if not profile:

@@ -30,11 +30,14 @@ async def quality_gates():
 
 
 @router.post("/backtest")
-async def backtest_script(payload: dict):
+def backtest_script(payload: dict):
     """Run a measured backtest against a supplied script.
 
     This returns real measurements. It never returns a score that was not
     computed, because a fabricated score would make the quality gate meaningless.
+
+    Declared `def` so FastAPI runs the blocking backtest (dozens of simulated
+    model calls) in its threadpool instead of on the event loop.
     """
     script = str(payload.get("script") or "").strip()
     if not script:

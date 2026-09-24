@@ -133,7 +133,9 @@ def plan(
     if business_context.strip():
         user_prompt += f"\n\n## Business Context\n{business_context.strip()}"
 
-    result = route_prompt(department.name, user_prompt, system_prompt=system_prompt, temperature=0.2)
+    result = route_prompt(
+        department.name, user_prompt, system_prompt=system_prompt, temperature=0.2, json_mode=True
+    )
     payload = extract_json(result["content"])
 
     raw_subtasks = payload.get("subtasks")
@@ -253,7 +255,9 @@ def verify_subtask(
         f"## Specialist Deliverable\n{deliverable}"
     )
 
-    result = route_prompt(department.name, user_prompt, system_prompt=system_prompt, temperature=0.1)
+    result = route_prompt(
+        department.name, user_prompt, system_prompt=system_prompt, temperature=0.1, json_mode=True
+    )
     payload = extract_json(result["content"])
 
     issues = payload.get("issues")
